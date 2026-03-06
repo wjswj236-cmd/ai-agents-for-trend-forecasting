@@ -146,7 +146,7 @@
         // 1. このファイルをブラウザで開き、左下の設定(⚙️) > 「管理者設定」タブをクリック
         // 2. あなたのAPIキーと、任意の「パスワード」を入力して「暗号化文字列」を生成する
         // 3. 生成された文字列をコピーし、下の ENCRYPTED_API_KEY の "" の中に貼り付けて保存する
-        const ENCRYPTED_API_KEY = "U2FsdGVkX1/UE4ha21osHhiUsNkMdVn+zh7OHJCi31jT8pq/pc7YD7bbmGxwzF7gIRqNlKELJAs+/g13ZTRADQ==";
+        const ENCRYPTED_API_KEY = "U2FsdGVkX18BJH8ulVIchUvvKrKwXSQ4tc6K5k12Zi7ixPcRGhnY4T72CwPmspWFQ0m08rFGQxZvzakTbIn2sw==";
 
         const TV_META_DATA_INFO = `株式会社エム・データが提供する「TVメタデータ」は以下の4種類で構成されます。
 1. 番組データ（番組放送内容）
@@ -173,7 +173,12 @@ ${X_DATA_INFO}
 以下がXデータの内容です：
 ${JSON.stringify(window.X_DATA)}
 
-これらのデータを総合的に推測・活用し、ユーザーの課題解決をサポートしてください。`;
+これらのデータを総合的に推測・活用し、ユーザーの課題解決をサポートしてください。
+
+【グラフ表示について】
+グラフ・チャート・図を出力する場合は、必ずSVGタグを使ってインラインSVGで描画してください。
+JSONやコードブロックは絶対に出力しないでください。
+SVGは<svg>タグから始まり</svg>で終わる形式で、Markdownのコードブロックで囲まずそのまま出力してください。`;
 
         // --- ユーティリティ ---
         // iframeプレビュー環境等でのセキュリティエラーを回避するためのラッパー
@@ -298,7 +303,7 @@ ${JSON.stringify(window.X_DATA)}
                                 if (useX) {
                                     prompt += '【情報ソース2: Xデータ】\n' + X_DATA_INFO + '\n以下がXデータの内容です：\n' + JSON.stringify(window.X_DATA) + '\n\n';
                                 }
-                                prompt += 'これらのデータを総合的に推測・活用し、ユーザーの課題解決をサポートしてください。\n\n回答の末尾に、あなたが参照したデータのIDを以下のJSON形式で必ず付記してください（説明不要）：\n<!-- REFS:{"tv":["sceneId1","sceneId2"],"x":[{"date":"2025年10月1日"},{"date":"2025年10月2日"}]} -->\nTVデータを参照していない場合は"tv":[]、Xデータを参照していない場合は"x":[]としてください。Xデータは日付単位で記載してください（rankは不要）。';
+                                prompt += 'これらのデータを総合的に推測・活用し、ユーザーの課題解決をサポートしてください。\n\n【グラフ表示について】\nグラフ・チャート・図を出力する場合は、必ずSVGタグを使ってインラインSVGで描画してください。\nJSONやコードブロックは絶対に出力しないでください。\nSVGは<svg>タグから始まり</svg>で終わる形式で、Markdownのコードブロックで囲まずそのまま出力してください。\n\n回答の末尾に、あなたが参照したデータのIDを以下のJSON形式で必ず付記してください（説明不要）：\n<!-- REFS:{"tv":["sceneId1","sceneId2"],"x":[{"date":"2025年10月1日"},{"date":"2025年10月2日"}]} -->\nTVデータを参照していない場合は"tv":[]、Xデータを参照していない場合は"x":[]としてください。Xデータは日付単位で記載してください（rankは不要）。';
                                 return prompt;
                             })() }] },
                             contents: newMessages.map(msg => ({
@@ -586,7 +591,24 @@ ${TV_META_DATA_INFO}
                                 'Xでは話題になっているが、テレビではまだあまり紹介されていないグルメは何ですか？',
                             ]},
                         ];
-                        const cat = templateCategory ? TEMPLATES.find(t => t.id === templateCategory) : null;
+                        const adaptQ = (q) => {
+                            if (selectedSource === 'tv') {
+                                return q
+                                    .replace(/テレビ又はX/g, 'テレビ')
+                                    .replace(/テレビ露出データまたはX分析データ/g, 'テレビ露出データ')
+                                    .replace(/テレビ番組またはX/g, 'テレビ番組');
+                            } else if (selectedSource === 'x') {
+                                return q
+                                    .replace(/テレビ又はX/g, 'X')
+                                    .replace(/テレビ露出データまたはX分析データ/g, 'X分析データ')
+                                    .replace(/テレビ番組またはX/g, 'X');
+                            }
+                            return q;
+                        };
+                        const ADAPTED_TEMPLATES = TEMPLATES.map(t =>
+                            t.id === 'cross' ? t : { ...t, questions: t.questions.map(adaptQ) }
+                        );
+                        const cat = templateCategory ? ADAPTED_TEMPLATES.find(t => t.id === templateCategory) : null;
                         return (
                             <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.4)'}}
                                 onClick={(e)=>{if(e.target===e.currentTarget){setShowTemplates(false);setTemplateCategory(null);}}}>
@@ -605,7 +627,7 @@ ${TV_META_DATA_INFO}
                                     {/* カテゴリ一覧 */}
                                     {!cat && (
                                         <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-                                            {TEMPLATES.map(t => (
+                                            {ADAPTED_TEMPLATES.map(t => (
                                                 <button key={t.id} onClick={()=>setTemplateCategory(t.id)}
                                                     style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderRadius:'12px',border:'none',cursor:'pointer',textAlign:'left',background:isDark?'#2a2a2e':'#f8f9fa',transition:'background 0.15s'}}
                                                     onMouseEnter={e=>e.currentTarget.style.background=isDark?'#3a3a3e':'#eef2ff'}
