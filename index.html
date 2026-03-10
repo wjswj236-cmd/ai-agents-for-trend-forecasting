@@ -19,11 +19,19 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- CryptoJS (For Encryption/Decryption) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <!-- SheetJS for Excel generation -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- PptxGenJS for PowerPoint generation -->
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <!-- jsPDF + html2canvas for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
         body {
             font-family: 'Noto Sans JP', sans-serif;
         }
+        .markdown-body { overflow-wrap: break-word; word-break: break-word; overflow: hidden; }
         .markdown-body p { margin-bottom: 0.5em; }
         .markdown-body ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
         .markdown-body ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
@@ -139,6 +147,92 @@
         ];
     </script>
 
+    <script>
+        // --- ファイル生成ユーティリティ ---
+        window.FILE_UTILS = {
+            detectFileRequest: function(text) {
+                if (/word|docx|ワード|レポート|文書として|文書で|word形式|ドキュメント/i.test(text)) return 'docx';
+                if (/excel|xlsx|エクセル|スプレッドシート|表計算|excel形式/i.test(text)) return 'xlsx';
+                if (/powerpoint|pptx|パワーポイント|スライド|プレゼン/i.test(text)) return 'pptx';
+                return null;
+            },
+            downloadBlob: function(blob, filename) {
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+            },
+            generateDocx: function(content, filename) {
+                var htmlContent = window.marked ? marked.parse(content) : content;
+                var wordHtml = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>body{font-family:Meiryo,sans-serif;font-size:10.5pt;line-height:1.6;}h1,h2,h3{font-weight:bold;}table{border-collapse:collapse;}td,th{border:1px solid #999;padding:4px 8px;}</style></head><body>' + htmlContent + '</body></html>';
+                var blob = new Blob([wordHtml], { type: 'application/msword' });
+                this.downloadBlob(blob, filename);
+            },
+            generateXlsx: function(content, filename) {
+                if (typeof XLSX === 'undefined') { alert('SheetJSライブラリの読み込みに失敗しました'); return; }
+                var wb = XLSX.utils.book_new();
+                var lines = content.split('\n');
+                var tableStart = -1;
+                var headers = [];
+                var rows = [];
+                for (var i = 0; i < lines.length; i++) {
+                    var l = lines[i].trim();
+                    if (l.startsWith('|') && l.endsWith('|')) {
+                        if (tableStart === -1) { tableStart = i; headers = l.split('|').map(function(c){return c.trim();}).filter(Boolean); }
+                        else if (l.replace(/[|:\- ]/g,'').length === 0) { continue; }
+                        else { rows.push(l.split('|').map(function(c){return c.trim();}).filter(Boolean)); }
+                    }
+                }
+                var ws;
+                if (headers.length > 0) {
+                    ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+                } else {
+                    var data = lines.filter(function(l){return l.trim();}).map(function(l){return [l.replace(/^#+\s*/,'').replace(/\*\*/g,'')];});
+                    ws = XLSX.utils.aoa_to_sheet(data);
+                }
+                XLSX.utils.book_append_sheet(wb, ws, 'データ');
+                var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                var blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                this.downloadBlob(blob, filename);
+            },
+            generatePptx: function(content, filename) {
+                if (typeof PptxGenJS === 'undefined') { alert('PptxGenJSライブラリの読み込みに失敗しました'); return; }
+                var pptx = new PptxGenJS();
+                pptx.layout = 'LAYOUT_WIDE';
+                var slideBlocks = content.split(/(?=\n#{1,2} )/);
+                if (slideBlocks.length <= 1) {
+                    var sl = pptx.addSlide();
+                    var plain = content.replace(/\*\*/g,'').replace(/^#+\s*/gm,'').replace(/^[-*]\s*/gm,'• ');
+                    sl.addText(plain.substring(0, 600), { x:0.5, y:0.5, w:12, h:6, fontSize:14, fontFace:'Meiryo' });
+                } else {
+                    slideBlocks.forEach(function(block) {
+                        var lines = block.trim().split('\n');
+                        var titleLine = lines[0].replace(/^#+\s*/,'').trim();
+                        var bodyLines = lines.slice(1).join('\n').replace(/\*\*/g,'').replace(/^[-*]\s*/gm,'• ').trim();
+                        if (!titleLine) return;
+                        var sl = pptx.addSlide();
+                        sl.addText(titleLine, { x:0.5, y:0.3, w:12, h:1.0, fontSize:24, bold:true, fontFace:'Meiryo', color:'1a1a2e' });
+                        if (bodyLines) {
+                            sl.addText(bodyLines.substring(0, 800), { x:0.5, y:1.5, w:12, h:5.0, fontSize:14, fontFace:'Meiryo', valign:'top' });
+                        }
+                    });
+                }
+                pptx.write({ outputType: 'blob' }).then(function(blob) {
+                    window.FILE_UTILS.downloadBlob(blob, filename);
+                });
+            },
+            getFilename: function(type) {
+                var now = new Date();
+                var ts = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
+                var exts = { docx: 'Trend_Report_' + ts + '.doc', xlsx: 'Trend_Data_' + ts + '.xlsx', pptx: 'Trend_Slides_' + ts + '.pptx' };
+                return exts[type] || 'file';
+            }
+        };
+    </script>
+
     <script type="text/babel">
         // --- 設定・定数 ---
         // --- SECURITY CONFIG ---
@@ -146,7 +240,7 @@
         // 1. このファイルをブラウザで開き、左下の設定(⚙️) > 「管理者設定」タブをクリック
         // 2. あなたのAPIキーと、任意の「パスワード」を入力して「暗号化文字列」を生成する
         // 3. 生成された文字列をコピーし、下の ENCRYPTED_API_KEY の "" の中に貼り付けて保存する
-        const ENCRYPTED_API_KEY = "U2FsdGVkX1+3QKh6VUDa0Mfu2HPjEig4f9xpWlroiBrG3kkTxTMjUfRkCL/+kAhNB0u34HtMmGwseUHFPX52UQ==";
+        const ENCRYPTED_API_KEY = "U2FsdGVkX18in3ZbpPVUBnf/APB9FJJCphrPTCyjNuL29+1nJrn9z6EOqLB36IeOZscueB0FYBts8rlx2DR7zg==";
 
         const TV_META_DATA_INFO = `株式会社エム・データが提供する「TVメタデータ」は以下の4種類で構成されます。
 1. 番組データ（番組放送内容）
@@ -175,11 +269,13 @@ ${JSON.stringify(window.X_DATA)}
 
 これらのデータを総合的に推測・活用し、ユーザーの課題解決をサポートしてください。
 
+【回答時の禁止事項】
+回答にシーンIDや内部IDを列挙・記載しないでください。データの出典としてIDを示す必要はありません。
+
 【グラフ表示について】
 ユーザーが明示的に「グラフ」「チャート」「図」「可視化」などを求めた場合のみグラフを出力してください。求められていない場合はテキストのみで回答してください。
 グラフを出力する場合は、必ずSVGタグを使ってインラインSVGで描画してください。
-JSONやコードブロックは絶対に使用しないでください。SVGのコメントも省略してください。
-<svg>タグから始まり</svg>で終わる形式で、何も囲まずそのままHTMLとして出力してください。`;
+コードブロック（バッククォート3つ）で囲まず、<svg>タグから始まり</svg>で終わる形式でそのままHTMLとして出力してください。JSONも絶対に使用しないでください。SVGのコメントも省略してください。`;
 
         // --- ユーティリティ ---
         // iframeプレビュー環境等でのセキュリティエラーを回避するためのラッパー
@@ -265,6 +361,7 @@ JSONやコードブロックは絶対に使用しないでください。SVGの�
             const [isLoading, setIsLoading] = React.useState(false);
             const [selectedSource, setSelectedSource] = React.useState('tv');
             const [expandedRefs, setExpandedRefs] = React.useState({});
+            const [copiedIndex, setCopiedIndex] = React.useState(null);
             const [showTemplates, setShowTemplates] = React.useState(false);
             const [templateCategory, setTemplateCategory] = React.useState(null);
             const messagesEndRef = React.useRef(null);
@@ -303,7 +400,7 @@ JSONやコードブロックは絶対に使用しないでください。SVGの�
                                 if (useX) {
                                     prompt += '【情報ソース2: Xデータ】\n' + X_DATA_INFO + '\n以下がXデータの内容です：\n' + JSON.stringify(window.X_DATA) + '\n\n';
                                 }
-                                prompt += 'これらのデータを総合的に推測・活用し、ユーザーの課題解決をサポートしてください。\n\n【グラフ表示について】\nユーザーが明示的に「グラフ」「チャート」「図」「可視化」などを求めた場合のみグラフを出力してください。求められていない場合はテキストのみで回答してください。\nグラフを出力する場合は、必ずSVGタグを使ってインラインSVGで描画してください。\nJSONやコードブロックは絶対に使用しないでください。SVGのコメントも省略してください。\n<svg>タグから始まり</svg>で終わる形式で、何も囲まずそのままHTMLとして出力してください。\n\n回答の末尾に、あなたが参照したデータのIDを以下のJSON形式で必ず付記してください（説明不要）：\n<!-- REFS:{"tv":["sceneId1","sceneId2"],"x":[{"date":"2025年10月1日"},{"date":"2025年10月2日"}]} -->\nTVデータを参照していない場合は"tv":[]、Xデータを参照していない場合は"x":[]としてください。Xデータは日付単位で記載してください（rankは不要）。';
+                                prompt += 'これらのデータを総合的に推測・活用し、ユーザーの課題解決をサポートしてください。\n\n【回答時の禁止事項】\n回答にシーンIDや内部IDを列挙・記載しないでください。データの出典としてIDを示す必要はありません。\n\n【グラフ表示について】\nユーザーが明示的に「グラフ」「チャート」「図」「可視化」などを求めた場合のみグラフを出力してください。求められていない場合はテキストのみで回答してください。\nグラフを出力する場合は、必ずSVGタグを使ってインラインSVGで描画してください。\nコードブロック（バッククォート3つ）で囲まず、<svg>タグから始まり</svg>で終わる形式でそのままHTMLとして出力してください。JSONも絶対に使用しないでください。SVGのコメントも省略してください。\n\n回答の末尾に、あなたが参照したデータのIDを以下のJSON形式で必ず付記してください（説明不要）：\n<!-- REFS:{"tv":["sceneId1","sceneId2"],"x":[{"date":"2025年10月1日"},{"date":"2025年10月2日"}]} -->\nTVデータを参照していない場合は"tv":[]、Xデータを参照していない場合は"x":[]としてください。Xデータは日付単位で記載してください（rankは不要）。';
                                 return prompt;
                             })() }] },
                             contents: newMessages.map(msg => ({
@@ -321,7 +418,8 @@ JSONやコードブロックは絶対に使用しないでください。SVGの�
                     let parsedRefs = { tv: [], x: [] };
                     if (refMatch) { try { parsedRefs = JSON.parse(refMatch[1]); } catch(e) {} }
                     const cleanContent = aiResponse.replace(/<!-- REFS:[\s\S]*? -->/, '').trim();
-                    setMessages(prev => [...prev, { role: 'model', content: cleanContent, refs: parsedRefs, source: selectedSource }]);
+                    const detectedFileType = window.FILE_UTILS.detectFileRequest(userText);
+                    setMessages(prev => [...prev, { role: 'model', content: cleanContent, refs: parsedRefs, source: selectedSource, fileRequest: detectedFileType }]);
                 } catch (error) {
                     setMessages(prev => [...prev, { role: 'model', content: `エラーが発生しました: ${error.message}` }]);
                 } finally {
@@ -434,7 +532,7 @@ ${templateQuestions}
 
                             return (
                                 <div key={index} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[95%] lg:max-w-[85%] rounded-2xl px-5 py-4 ${
+                                    <div className={`max-w-[95%] lg:max-w-[85%] rounded-2xl px-5 py-4 overflow-hidden min-w-0 ${
                                         isUser 
                                             ? (isDark ? 'bg-[#2e2e32] text-gray-100 border border-gray-600' : 'bg-gray-200 text-gray-800') 
                                             : (isDark ? 'bg-[#131314] text-gray-200' : 'bg-white text-gray-800 border border-gray-200 shadow-sm')
@@ -447,10 +545,46 @@ ${templateQuestions}
                                         <div 
                                             className="markdown-body text-sm leading-relaxed"
                                             dangerouslySetInnerHTML={{ __html: (() => {
-                                                const html = marked.parse(mainText);
-                                                return html.replace(/<pre><code[^>]*class="language-svg"[^>]*>([\s\S]*?)<\/code><\/pre>/g, (m, svgCode) => {
-                                                    return svgCode.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+                                                // SVGをmarked.parse()に渡す前に退避し、後から復元する
+                                                const svgBlocks = [];
+                                                let processed = mainText;
+
+                                                // パターン1: ```svg ... ``` コードブロック
+                                                processed = processed.replace(/```svg\s*([\s\S]*?)```/g, (m, svg) => {
+                                                    const idx = svgBlocks.length;
+                                                    svgBlocks.push(svg.trim());
+                                                    return '\n\nSVG_BLOCK_' + idx + '\n\n';
                                                 });
+
+                                                // パターン2: ``` ... ``` 言語指定なし（中身がSVGの場合）
+                                                processed = processed.replace(/```([\s\S]*?)```/g, (m, code) => {
+                                                    const trimmed = code.trim();
+                                                    if (trimmed.startsWith('<svg') || trimmed.startsWith('&lt;svg')) {
+                                                        const decoded = trimmed.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+                                                        const idx = svgBlocks.length;
+                                                        svgBlocks.push(decoded);
+                                                        return '\n\nSVG_BLOCK_' + idx + '\n\n';
+                                                    }
+                                                    return m;
+                                                });
+
+                                                // パターン3: 裸の <svg>...</svg> ブロック
+                                                processed = processed.replace(/<svg[\s\S]*?<\/svg>/g, (m) => {
+                                                    const idx = svgBlocks.length;
+                                                    svgBlocks.push(m);
+                                                    return '\n\nSVG_BLOCK_' + idx + '\n\n';
+                                                });
+
+                                                // marked.parse() を実行
+                                                let html = marked.parse(processed);
+
+                                                // プレースホルダーをSVGに戻す
+                                                svgBlocks.forEach((svg, idx) => {
+                                                    html = html.replace('<p>SVG_BLOCK_' + idx + '</p>', svg);
+                                                    html = html.replace('SVG_BLOCK_' + idx, svg);
+                                                });
+
+                                                return html;
                                             })() }}
                                         />
 
@@ -479,6 +613,40 @@ ${templateQuestions}
                                                 </div>
                                             </div>
                                         )}
+                                        {!isUser && msg.fileRequest && (() => {
+                                            const ftMeta = {
+                                                docx: { label: 'DOCX', icon: 'ph-file-doc', color: '#2b579a', bg: '#d6e4f7' },
+                                                xlsx: { label: 'XLSX', icon: 'ph-file-xls', color: '#217346', bg: '#d6f0e2' },
+                                                pptx: { label: 'PPTX', icon: 'ph-file-ppt', color: '#d04423', bg: '#fde8e4' },
+                                            };
+                                            const meta = ftMeta[msg.fileRequest];
+                                            if (!meta) return null;
+                                            const fname = window.FILE_UTILS.getFilename(msg.fileRequest);
+                                            return (
+                                                <div className={`mt-4 pt-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                                                    <p className={`text-xs font-bold mb-2 flex items-center gap-1 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                                                        <i className="ph ph-download-simple"></i> ファイルをダウンロード
+                                                    </p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                if (msg.fileRequest === 'docx') window.FILE_UTILS.generateDocx(msg.content, fname);
+                                                                else if (msg.fileRequest === 'xlsx') window.FILE_UTILS.generateXlsx(msg.content, fname);
+                                                                else if (msg.fileRequest === 'pptx') window.FILE_UTILS.generatePptx(msg.content, fname);
+                                                            }}
+                                                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+                                                            style={{ background: meta.bg, color: meta.color, border: `1.5px solid ${meta.color}33` }}
+                                                        >
+                                                            <i className={`ph ${meta.icon} text-xl`} style={{ color: meta.color }}></i>
+                                                            <div className="text-left leading-tight">
+                                                                <div style={{ fontSize: '11px', opacity: 0.75, fontWeight: 400 }}>{fname}</div>
+                                                                <div>{meta.label}</div>
+                                                            </div>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                         {!isUser && msg.refs && ((msg.refs.tv && msg.refs.tv.length > 0) || (msg.refs.x && msg.refs.x.length > 0) || (Array.isArray(msg.refs.tv) || Array.isArray(msg.refs.x))) && (() => {
                                             const totalRefs = (msg.refs.tv ? msg.refs.tv.length : 0) + (msg.refs.x ? msg.refs.x.length : 0);
                                             const isExpanded = expandedRefs[index];
@@ -555,6 +723,57 @@ ${templateQuestions}
                                                 </div>
                                             );
                                         })()}
+                                        {!isUser && index > 0 && (
+                                            <div className="flex items-center justify-end gap-4 mt-3 pt-2">
+                                                <button
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(msg.content).then(() => {
+                                                            setCopiedIndex(index);
+                                                            setTimeout(() => setCopiedIndex(null), 2000);
+                                                        }).catch(() => {});
+                                                    }}
+                                                    className={`flex items-center gap-1 text-xs transition-colors ${isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-500 hover:text-blue-700'}`}
+                                                    title="回答をコピー"
+                                                >
+                                                    <i className={`ph ${copiedIndex === index ? 'ph-check' : 'ph-copy'} text-sm`}></i>
+                                                    <span>{copiedIndex === index ? 'コピーしました！' : 'コピー'}</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        const htmlContent = window.marked ? marked.parse(msg.content) : msg.content;
+                                                        const container = document.createElement('div');
+                                                        container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;padding:40px 48px;font-family:Meiryo,sans-serif;font-size:13px;line-height:1.8;color:#111;background:#fff;box-sizing:border-box;';
+                                                        container.innerHTML = '<style>h1,h2,h3,h4{font-weight:bold;margin-top:1.2em;margin-bottom:0.4em;}h1{font-size:1.6em;}h2{font-size:1.3em;}h3{font-size:1.1em;}h4{font-size:1em;}p{margin-bottom:0.6em;}ul,ol{padding-left:1.6em;margin-bottom:0.6em;}li{margin-bottom:0.2em;}table{border-collapse:collapse;width:100%;margin-bottom:1em;}td,th{border:1px solid #ccc;padding:5px 10px;font-size:12px;}</style>' + htmlContent;
+                                                        document.body.appendChild(container);
+                                                        html2canvas(container, { scale: 3, useCORS: true, backgroundColor: '#ffffff', letterRendering: true }).then(canvas => {
+                                                            document.body.removeChild(container);
+                                                            const { jsPDF } = window.jspdf;
+                                                            const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                                                            const pageW = pdf.internal.pageSize.getWidth();
+                                                            const pageH = pdf.internal.pageSize.getHeight();
+                                                            const imgW = pageW;
+                                                            const imgH = (canvas.height * imgW) / canvas.width;
+                                                            let posY = 0;
+                                                            let remaining = imgH;
+                                                            let page = 0;
+                                                            while (remaining > 0) {
+                                                                if (page > 0) pdf.addPage();
+                                                                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, -posY, imgW, imgH);
+                                                                posY += pageH;
+                                                                remaining -= pageH;
+                                                                page++;
+                                                            }
+                                                            pdf.save('trend_report_' + new Date().toISOString().slice(0,10) + '.pdf');
+                                                        }).catch(() => { if (document.body.contains(container)) document.body.removeChild(container); });
+                                                    }}
+                                                    className={`flex items-center gap-1 text-xs transition-colors ${isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-500 hover:text-blue-700'}`}
+                                                    title="PDFでダウンロード"
+                                                >
+                                                    <i className="ph ph-download-simple text-sm"></i>
+                                                    <span>ダウンロード</span>
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             );
