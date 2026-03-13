@@ -240,7 +240,7 @@
         // 1. このファイルをブラウザで開き、左下の設定(⚙️) > 「管理者設定」タブをクリック
         // 2. あなたのAPIキーと、任意の「パスワード」を入力して「暗号化文字列」を生成する
         // 3. 生成された文字列をコピーし、下の ENCRYPTED_API_KEY の "" の中に貼り付けて保存する
-        const ENCRYPTED_API_KEY = "U2FsdGVkX18sYwJqq4X3cfbppnBOMDs6AKPU7oLi7L0Dd8HIL3QAMvoytGNFJsfwbelBopowY7j/32leBZ8mdw==";
+        const ENCRYPTED_API_KEY = "U2FsdGVkX1/mu0/o31gR7+ib1oQsQNwvrTNM110F/8HjosEXdI0a2Phl8tYhzkYsjHaxKdzzLVi+aSjlTjYtRg==";
 
         const TV_META_DATA_INFO = `株式会社エム・データが提供する「TVメタデータ」は以下の4種類で構成されます。
 1. 番組データ（番組放送内容）
@@ -486,10 +486,10 @@ ${JSON.stringify(window.X_DATA)}
                     if (data.error) throw new Error(data.error.message);
                     
                     const aiResponse = data.candidates[0].content.parts[0].text;
-                    const refMatch = aiResponse.match(/<!-- REFS:([\s\S]*?) -->/);
+                    const refMatch = aiResponse.match(/<!--\s*REFS\s*:([\s\S]*?)-->/i);
                     let parsedRefs = { tv: [], x: [] };
-                    if (refMatch) { try { parsedRefs = JSON.parse(refMatch[1]); } catch(e) {} }
-                    const cleanContent = aiResponse.replace(/<!-- REFS:[\s\S]*? -->/, '').trim();
+                    if (refMatch) { try { parsedRefs = JSON.parse(refMatch[1].trim()); } catch(e) {} }
+                    const cleanContent = aiResponse.replace(/<!--\s*REFS\s*:[\s\S]*?-->/i, '').trim();
                     const detectedFileType = window.FILE_UTILS.detectFileRequest(userText);
                     setMessages(prev => [...prev, { role: 'model', content: cleanContent, refs: parsedRefs, source: selectedSource, fileRequest: detectedFileType }]);
                 } catch (error) {
@@ -586,7 +586,7 @@ ${templateQuestions}
                     }
                     // パース失敗時はプレーンテキストをそのまま表示
                     const displayContent = intro || raw;
-                    setMessages(prev => [...prev, { role: 'model', content: displayContent, suggestions: questions, suggestionType: 'prompt' }]);
+                    setMessages(prev => [...prev, { role: 'model', content: displayContent, suggestions: questions, suggestionType: 'prompt', isSupportMessage: true }]);
                 } catch (error) {
                     setMessages(prev => [...prev, { role: 'model', content: `エラーが発生しました: ${error.message}` }]);
                 } finally {
@@ -609,11 +609,11 @@ ${templateQuestions}
                         <div className="max-w-4xl mx-auto space-y-6">
                         {messages.map((msg, index) => {
                             const isUser = msg.role === 'user';
-                            // サジェストチップのパース
-                            const _parsed = parseMessageContent(msg.content);
-                            const mainText = _parsed.mainText;
-                            const suggestions = (msg.suggestions && msg.suggestions.length > 0) ? msg.suggestions : _parsed.suggestions;
-                            const suggestionType = msg.suggestionType || _parsed.suggestionType;
+                            // サジェストチップのパース（AIサポートメッセージのみ提案UIを表示）
+                            const isSupport = !!msg.isSupportMessage;
+                            const mainText = isSupport ? parseMessageContent(msg.content).mainText : msg.content;
+                            const suggestions = isSupport ? (msg.suggestions || []) : [];
+                            const suggestionType = msg.suggestionType || 'prompt';
 
                             const isLastAiMsg = !isUser && index === messages.length - 1;
                             return (
@@ -738,7 +738,7 @@ ${templateQuestions}
                                                 </div>
                                             );
                                         })()}
-                                        {!isUser && msg.refs && ((msg.refs.tv && msg.refs.tv.length > 0) || (msg.refs.x && msg.refs.x.length > 0) || (Array.isArray(msg.refs.tv) || Array.isArray(msg.refs.x))) && (() => {
+                                        {!isUser && msg.refs && ((msg.refs.tv && msg.refs.tv.length > 0) || (msg.refs.x && msg.refs.x.length > 0)) && (() => {
                                             const totalRefs = (msg.refs.tv ? msg.refs.tv.length : 0) + (msg.refs.x ? msg.refs.x.length : 0);
                                             const isExpanded = expandedRefs[index];
                                             const tvItems = (msg.refs.tv || []).map(id => window.TV_META_DATA.find(d => d.sceneId === id)).filter(Boolean);
