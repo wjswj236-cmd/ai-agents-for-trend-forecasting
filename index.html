@@ -240,7 +240,7 @@
         // 1. このファイルをブラウザで開き、左下の設定(⚙️) > 「管理者設定」タブをクリック
         // 2. あなたのAPIキーと、任意の「パスワード」を入力して「暗号化文字列」を生成する
         // 3. 生成された文字列をコピーし、下の ENCRYPTED_API_KEY の "" の中に貼り付けて保存する
-        const ENCRYPTED_API_KEY = "U2FsdGVkX1/mu0/o31gR7+ib1oQsQNwvrTNM110F/8HjosEXdI0a2Phl8tYhzkYsjHaxKdzzLVi+aSjlTjYtRg==";
+        const ENCRYPTED_API_KEY = "U2FsdGVkX194N2LKY6j2C71tIHLj1rSIxp+namjMfRRHCczwyxwiWZIqnl9gX4ZieYoeTywanMNrKEJBSP1/Hg==";
 
         const TV_META_DATA_INFO = `株式会社エム・データが提供する「TVメタデータ」は以下の4種類で構成されます。
 1. 番組データ（番組放送内容）
@@ -1983,8 +1983,13 @@ ${templateQuestions}
                                         const alpha = selected ? (isSel || isNear ? 1 : 0.15) : (isHov ? 1 : 0.8);
                                         const label = d.theme.length > 10 ? d.theme.slice(0, 10) + '…' : d.theme;
                                         const fontSize = Math.max(9, Math.min(13.5, r * 0.72));
-                                        // 上位13件 or ホバー/選択中のみラベル常時表示
-                                        const showLabel = idx < 13 || isSel || isHov;
+                                        // 上位5件 or 選択中は常時ラベル表示、それ以外はホバー時のみ
+                                        const showAlwaysLabel = idx < 5 || isSel;
+                                        const showHoverLabel  = !showAlwaysLabel && isHov;
+                                        // ホバー用ラベルのバブル外表示設定
+                                        const hoverLabelY  = -(r + 6);
+                                        const hoverLabelFs = 11.5;
+                                        const hoverLabelW  = Math.min(label.length * hoverLabelFs * 0.62 + 12, 130);
                                         return (
                                             <g key={d.theme}
                                                 transform={`translate(${svgX},${svgY})`}
@@ -1999,16 +2004,33 @@ ${templateQuestions}
                                                     </circle>
                                                 )}
                                                 <circle r={r}
-                                                    fill={baseColor} fillOpacity={alpha * 0.45}
-                                                    stroke={baseColor} strokeWidth={isSel ? 2.5 : isNear ? 2 : 1}
-                                                    strokeOpacity={alpha}/>
-                                                {showLabel && (
+                                                    fill={baseColor} fillOpacity={alpha * 0.18}
+                                                    stroke={baseColor} strokeWidth={isSel ? 2.5 : isNear ? 2 : 1.2}
+                                                    strokeOpacity={alpha * 0.7}/>
+                                                {showAlwaysLabel && (
                                                     <text textAnchor="middle" dominantBaseline="middle"
-                                                        fontSize={fontSize} fontWeight={isSel ? 'bold' : 'normal'}
-                                                        fill={isDark ? '#fff' : '#111'} fillOpacity={alpha}
+                                                        fontSize={fontSize} fontWeight={isSel ? 'bold' : '500'}
+                                                        fill={isDark ? '#e5e7eb' : '#1f2937'} fillOpacity={Math.min(alpha + 0.15, 1)}
                                                         style={{pointerEvents:'none', userSelect:'none'}}>
                                                         {label}
                                                     </text>
+                                                )}
+                                                {showHoverLabel && (
+                                                    <g style={{pointerEvents:'none'}}>
+                                                        <rect
+                                                            x={-hoverLabelW / 2} y={hoverLabelY - hoverLabelFs - 3}
+                                                            width={hoverLabelW} height={hoverLabelFs + 8}
+                                                            rx="4"
+                                                            fill={isDark ? '#1e293b' : '#ffffff'}
+                                                            stroke={baseColor} strokeWidth="1"
+                                                            opacity="0.95"/>
+                                                        <text textAnchor="middle" y={hoverLabelY - 2}
+                                                            fontSize={hoverLabelFs} fontWeight="600"
+                                                            fill={isDark ? '#f1f5f9' : '#1f2937'}
+                                                            style={{userSelect:'none'}}>
+                                                            {label}
+                                                        </text>
+                                                    </g>
                                                 )}
                                             </g>
                                         );
