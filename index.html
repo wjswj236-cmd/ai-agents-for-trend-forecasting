@@ -240,7 +240,7 @@
         // 1. このファイルをブラウザで開き、左下の設定(⚙️) > 「管理者設定」タブをクリック
         // 2. あなたのAPIキーと、任意の「パスワード」を入力して「暗号化文字列」を生成する
         // 3. 生成された文字列をコピーし、下の ENCRYPTED_API_KEY の "" の中に貼り付けて保存する
-        const ENCRYPTED_API_KEY = "U2FsdGVkX1+dR1d1tG9mgOt2tzRu1SAKqbe4zEkZFcPs0IbeBlmLzcRH08dfst5b1awbHVE/GhAeCMi72yL6bg==";
+        const ENCRYPTED_API_KEY = "U2FsdGVkX1/ZTERFguywtzkpOQzNjT77ADY0PO0wIwR+sh7e1Na1VutogVAPYkX8RpHJkQmrPVw3GprHOuUjyA==";
 
         const TV_META_DATA_INFO = `株式会社エム・データが提供する「TVメタデータ」は以下の4種類で構成されます。
 1. 番組データ（番組放送内容）
@@ -1978,7 +1978,7 @@ ${templateQuestions}
                                         const isNear = nearItems.some(n => n.theme === d.theme);
                                         const isHov  = hoveredKw === d.theme;
                                         // 単色統一：選択・ホバー状態でアクセントを変える
-                                        const bubbleBase   = isDark ? '#6b7280' : '#64748b';
+                                        const bubbleBase   = '#f7d9a4';
                                         const bubbleSel    = isDark ? '#34d399' : '#10b981';
                                         const bubbleHov    = isDark ? '#93c5fd' : '#3b82f6';
                                         const bubbleColor  = isSel ? bubbleSel : isHov ? bubbleHov : bubbleBase;
