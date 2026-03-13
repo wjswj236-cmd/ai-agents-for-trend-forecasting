@@ -240,7 +240,7 @@
         // 1. このファイルをブラウザで開き、左下の設定(⚙️) > 「管理者設定」タブをクリック
         // 2. あなたのAPIキーと、任意の「パスワード」を入力して「暗号化文字列」を生成する
         // 3. 生成された文字列をコピーし、下の ENCRYPTED_API_KEY の "" の中に貼り付けて保存する
-        const ENCRYPTED_API_KEY = "U2FsdGVkX199kvTLdqVLwSpHTfXrokgK9zI5rFJBgbFBiQPdWsnTy1zwYjQreMoMhIBtitv3jpKJTmp2fGTE8Q==";
+        const ENCRYPTED_API_KEY = "U2FsdGVkX1/7gtXCqDO9r8Vx59+bluzTjh4Qqok6YjnNN3fA4Ng7HDN5khqQDo9CQRglGuYH0Ge2yyXt26S/mw==";
 
         const TV_META_DATA_INFO = `株式会社エム・データが提供する「TVメタデータ」は以下の4種類で構成されます。
 1. 番組データ（番組放送内容）
@@ -315,7 +315,7 @@ ${JSON.stringify(window.X_DATA)}
         // --- コンポーネント ---
 
         // 1. サイドバー
-        const Sidebar = ({ onNewChat, onOpenSettings, hasKey, theme }) => {
+        const Sidebar = ({ onNewChat, onOpenSettings, hasKey, theme, currentView, onViewChange }) => {
             return (
                 <div className="w-64 flex-shrink-0 flex flex-col border-r border-gray-800 bg-[#212123]">
                     <div className="p-4 border-b border-gray-800/50 flex items-center justify-center">
@@ -327,7 +327,46 @@ ${JSON.stringify(window.X_DATA)}
                             className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-colors bg-blue-600 hover:bg-blue-700 text-white"
                         >
                             <i className="ph ph-plus text-lg"></i>
-                            新しい分析を開始
+                            新規チャット
+                        </button>
+                    </div>
+                    <div className="px-3 py-2 border-b border-gray-800/50">
+                        <p className="text-xs font-bold mb-2 px-1 text-gray-500">メニュー</p>
+                        <button
+                            onClick={() => onViewChange('ranking')}
+                            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                                currentView === 'ranking' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-600'
+                            }`}
+                        >
+                            <i className="ph ph-trophy text-lg"></i>
+                            トレンドランキング
+                        </button>
+                        <button
+                            onClick={() => onViewChange('keywordmap')}
+                            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                                currentView === 'keywordmap' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-600'
+                            }`}
+                        >
+                            <i className="ph ph-graph text-lg"></i>
+                            キーワードマップ
+                        </button>
+                        <button
+                            onClick={() => onViewChange('positioningmap')}
+                            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                                currentView === 'positioningmap' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-600'
+                            }`}
+                        >
+                            <i className="ph ph-chart-scatter text-lg"></i>
+                            ポジショニングマップ
+                        </button>
+                        <button
+                            onClick={() => onViewChange('report')}
+                            className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                                currentView === 'report' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-600'
+                            }`}
+                        >
+                            <i className="ph ph-file-text text-lg"></i>
+                            レポート自動生成
                         </button>
                     </div>
                     <div className="flex-1 overflow-y-auto px-4 py-2">
@@ -1221,8 +1260,1650 @@ ${templateQuestions}
             );
         };
 
+
+        // =============================================
+        // 3. キーワードマップ コンポーネント
+        const KeywordMapView = ({ theme }) => {
+            const isDark = theme === 'dark';
+            const [selectedKw, setSelectedKw] = React.useState(null);
+            const [filterSource, setFilterSource] = React.useState('all');
+
+            // ── 日付ユーティリティ（RankingViewと共通仕様） ──────────
+            const parseTVDate  = (s) => { if (!s) return null; const [y,m,d] = s.split('/').map(Number); return new Date(y, m-1, d); };
+            const parseXDate   = (s) => { if (!s) return null; const mt = s.match(/(\d+)年(\d+)月(\d+)日/); return mt ? new Date(+mt[1], +mt[2]-1, +mt[3]) : null; };
+            const toInputVal   = (d) => { if (!d) return ''; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+            const fromInputVal = (s) => s ? new Date(s + 'T00:00:00') : null;
+
+            const { dataMinDate, dataMaxDate } = React.useMemo(() => {
+                let mn = null, mx = null;
+                window.TV_META_DATA.forEach(d => { const dt = parseTVDate(d.date); if (!dt) return; if (!mn||dt<mn) mn=dt; if (!mx||dt>mx) mx=dt; });
+                window.X_DATA.forEach(day  => { const dt = parseXDate(day.date);  if (!dt) return; if (!mn||dt<mn) mn=dt; if (!mx||dt>mx) mx=dt; });
+                return { dataMinDate: mn, dataMaxDate: mx };
+            }, []);
+
+            const [startDate, setStartDate] = React.useState(() => dataMinDate);
+            const [endDate,   setEndDate]   = React.useState(() => dataMaxDate);
+
+            const setQuick = (days) => {
+                if (!dataMaxDate) return;
+                if (days === 0) { setStartDate(dataMinDate); setEndDate(dataMaxDate); setSelectedKw(null); return; }
+                const s = new Date(dataMaxDate); s.setDate(s.getDate() - (days - 1));
+                setStartDate(s < dataMinDate ? dataMinDate : s); setEndDate(dataMaxDate); setSelectedKw(null);
+            };
+
+            const filteredTV = React.useMemo(() => window.TV_META_DATA.filter(d => {
+                const dt = parseTVDate(d.date); if (!dt) return false;
+                if (startDate && dt < startDate) return false;
+                if (endDate   && dt > endDate)   return false;
+                return true;
+            }), [startDate, endDate]);
+
+            const filteredX = React.useMemo(() => window.X_DATA.filter(day => {
+                const dt = parseXDate(day.date); if (!dt) return false;
+                if (startDate && dt < startDate) return false;
+                if (endDate   && dt > endDate)   return false;
+                return true;
+            }), [startDate, endDate]);
+
+            const STOP = new Set(['グルメ','レシピ','おうちごはん','PR','秋グルメ','健康ごはん','時短ごはん','コンビニ新商品','おはようございます','おうちごはん']);
+
+            const { allKeywords, tvRelations } = React.useMemo(() => {
+                // TV キーワード集計
+                const tvKw = {};
+                const tvRel = {};
+                filteredTV.forEach(d => {
+                    const items = [];
+                    if (d.theme) items.push(d.theme.trim());
+                    (d.tags || '').split(',').forEach(t => { const s = t.trim(); if (s) items.push(s); });
+                    items.forEach(k => {
+                        if (k.length >= 3 && !STOP.has(k)) {
+                            tvKw[k] = (tvKw[k] || 0) + 1;
+                            if (!tvRel[k]) tvRel[k] = new Set();
+                            items.forEach(k2 => { if (k2 !== k && k2.length >= 3 && !STOP.has(k2)) tvRel[k].add(k2); });
+                        }
+                    });
+                });
+                // X キーワード集計
+                const xKw = {};
+                filteredX.forEach(day => {
+                    (day.tags || '').split(',').forEach(t => {
+                        const s = t.trim().replace(/^#/, '');
+                        if (s.length >= 3 && !STOP.has(s)) xKw[s] = (xKw[s] || 0) + 1;
+                    });
+                });
+                // マージ
+                const all = {};
+                Object.keys(tvKw).forEach(k => { all[k] = { tv: tvKw[k], x: 0, total: tvKw[k], source: 'tv' }; });
+                Object.keys(xKw).forEach(k => {
+                    let matched = false;
+                    Object.keys(all).forEach(tvK => {
+                        if (tvK === k || tvK.includes(k) || k.includes(tvK)) {
+                            all[tvK].x += xKw[k];
+                            all[tvK].total += xKw[k];
+                            all[tvK].source = 'both';
+                            matched = true;
+                        }
+                    });
+                    if (!matched) all[k] = { tv: 0, x: xKw[k], total: xKw[k], source: 'x' };
+                });
+                const sorted = Object.entries(all)
+                    .sort((a, b) => b[1].total - a[1].total)
+                    .slice(0, 60)
+                    .map(([keyword, data]) => ({ keyword, ...data }));
+                return { allKeywords: sorted, tvRelations: tvRel };
+            }, [filteredTV, filteredX]);
+
+            const mapData = React.useMemo(() => {
+                const filtered = filterSource === 'all' ? allKeywords
+                    : allKeywords.filter(k =>
+                        filterSource === 'both' ? k.source === 'both'
+                        : filterSource === 'tv'  ? k.source === 'tv'
+                        : k.source === 'x');
+                const W = 800, H = 560;
+                const maxTotal = Math.max(...filtered.map(k => k.total), 1);
+                return filtered.slice(0, 50).map((k, i) => {
+                    const r = 14 + (k.total / maxTotal) * 42;
+                    const angle = i * 2.399; // golden angle ≈ 137.5°
+                    const dist  = 55 + Math.sqrt(i) * 52;
+                    const x = W / 2 + Math.cos(angle) * dist;
+                    const y = H / 2 + Math.sin(angle) * dist;
+                    return { ...k, r, x: Math.max(r + 6, Math.min(W - r - 6, x)), y: Math.max(r + 6, Math.min(H - r - 6, y)) };
+                });
+            }, [allKeywords, filterSource]);
+
+            const getColor = (source) => {
+                if (source === 'tv')   return isDark ? '#3b82f6' : '#2563eb';
+                if (source === 'x')    return isDark ? '#f59e0b' : '#d97706';
+                return isDark ? '#a855f7' : '#7c3aed';
+            };
+
+            const getRelated = (kw) => {
+                if (!kw) return [];
+                const set = tvRelations[kw.keyword] || new Set();
+                return allKeywords.filter(k => k.keyword !== kw.keyword && (
+                    kw.keyword.includes(k.keyword) || k.keyword.includes(kw.keyword) || set.has(k.keyword)
+                )).slice(0, 6);
+            };
+
+            const related = React.useMemo(() => getRelated(selectedKw), [selectedKw, allKeywords]);
+
+            const FILTERS = [
+                { id: 'all',  label: 'すべて' },
+                { id: 'tv',   label: 'TVのみ' },
+                { id: 'x',    label: 'Xのみ' },
+                { id: 'both', label: 'クロス' }
+            ];
+
+            return (
+                <div className={`flex-1 flex flex-col overflow-hidden ${isDark ? 'bg-[#131314]' : 'bg-gray-50'}`}>
+                    {/* ヘッダー */}
+                    <div className={`px-6 py-4 border-b flex-shrink-0 ${isDark ? 'border-gray-800 bg-[#1a1a1e]' : 'border-gray-200 bg-white'}`}>
+                        <div className="flex items-start gap-3 flex-wrap">
+                            <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                                <i className="ph ph-graph text-xl text-purple-400"></i>
+                                <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>キーワードマップ</h2>
+                            </div>
+                            {/* 日付範囲選択 */}
+                            <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                                <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-sm ${isDark ? 'border-gray-700 bg-[#131314]' : 'border-gray-300 bg-gray-50'}`}>
+                                    <i className={`ph ph-calendar text-base ${isDark ? 'text-gray-400' : 'text-gray-500'}`}></i>
+                                    <input type="date"
+                                        value={toInputVal(startDate)}
+                                        min={toInputVal(dataMinDate)} max={toInputVal(endDate)}
+                                        onChange={e => { setStartDate(fromInputVal(e.target.value) || dataMinDate); setSelectedKw(null); }}
+                                        className={`bg-transparent outline-none text-sm w-32 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
+                                        style={{colorScheme: isDark ? 'dark' : 'light'}} />
+                                    <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>〜</span>
+                                    <input type="date"
+                                        value={toInputVal(endDate)}
+                                        min={toInputVal(startDate)} max={toInputVal(dataMaxDate)}
+                                        onChange={e => { setEndDate(fromInputVal(e.target.value) || dataMaxDate); setSelectedKw(null); }}
+                                        className={`bg-transparent outline-none text-sm w-32 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
+                                        style={{colorScheme: isDark ? 'dark' : 'light'}} />
+                                </div>
+                                {/* クイック選択 */}
+                                <div className="flex gap-1">
+                                    {[['7日', 7], ['14日', 14], ['全期間', 0]].map(([lbl, d]) => (
+                                        <button key={lbl} onClick={() => setQuick(d)}
+                                            className={`px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors whitespace-nowrap ${isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                                            {lbl === '全期間' ? lbl : `直近${lbl}`}
+                                        </button>
+                                    ))}
+                                </div>
+                                {/* 件数サマリー */}
+                                <span className={`text-xs ml-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    TV {filteredTV.length}件 ／ X {filteredX.length}日分
+                                </span>
+                            </div>
+                            {/* ソースフィルター */}
+                            <div className="flex gap-1.5 flex-shrink-0">
+                                {FILTERS.map(f => (
+                                    <button key={f.id} onClick={() => { setFilterSource(f.id); setSelectedKw(null); }}
+                                        className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors ${
+                                            filterSource === f.id
+                                                ? (isDark ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white')
+                                                : (isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100')
+                                        }`}>{f.label}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex gap-5 mt-2 text-xs">
+                            {[['bg-blue-500','TVメタデータ'],['bg-yellow-500','Xデータ'],['bg-purple-500','クロスメディア']].map(([cls,lbl]) => (
+                                <span key={lbl} className="flex items-center gap-1.5">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${cls}`}></span>
+                                    <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>{lbl}</span>
+                                </span>
+                            ))}
+                            <span className={isDark ? 'text-gray-600' : 'text-gray-400'}>バブルをクリックで詳細表示</span>
+                        </div>
+                    </div>
+
+                    {/* メインコンテンツ */}
+                    <div className="flex-1 flex overflow-hidden min-h-0">
+                        {/* SVGマップ */}
+                        <div className="flex-1 relative overflow-hidden">
+                            <svg viewBox="0 0 800 560" style={{width:'100%',height:'100%'}}
+                                className={isDark ? 'bg-[#131314]' : 'bg-gray-50'}>
+                                {/* グリッドの薄いドット */}
+                                <defs>
+                                    <pattern id="kmdot" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+                                        <circle cx="20" cy="20" r="1" fill={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} />
+                                    </pattern>
+                                </defs>
+                                <rect width="800" height="560" fill="url(#kmdot)" />
+
+                                {/* 選択キーワード→関連の接続線 */}
+                                {selectedKw && related.map(rel => {
+                                    const src = mapData.find(k => k.keyword === selectedKw.keyword);
+                                    const dst = mapData.find(k => k.keyword === rel.keyword);
+                                    if (!src || !dst) return null;
+                                    return (
+                                        <line key={rel.keyword}
+                                            x1={src.x} y1={src.y} x2={dst.x} y2={dst.y}
+                                            stroke={isDark ? 'rgba(168,85,247,0.5)' : 'rgba(124,58,237,0.35)'}
+                                            strokeWidth="1.5" strokeDasharray="5,4" />
+                                    );
+                                })}
+
+                                {/* バブル */}
+                                {mapData.map(k => {
+                                    const isSel     = selectedKw?.keyword === k.keyword;
+                                    const isRel     = related.some(r => r.keyword === k.keyword);
+                                    const color     = getColor(k.source);
+                                    const alpha     = selectedKw ? (isSel || isRel ? 1 : 0.18) : 0.88;
+                                    const fontSize  = Math.max(8, Math.min(12, k.r * 0.68));
+                                    const shortLabel = k.keyword.length > 8 ? k.keyword.slice(0,8) + '…' : k.keyword;
+                                    return (
+                                        <g key={k.keyword} transform={`translate(${k.x},${k.y})`}
+                                            onClick={() => setSelectedKw(isSel ? null : k)}
+                                            style={{cursor:'pointer'}}>
+                                            {isSel && (
+                                                <circle r={k.r + 6} fill="none" stroke={color} strokeWidth="1.5" opacity="0.0">
+                                                    <animate attributeName="r"       values={`${k.r+3};${k.r+12}`} dur="1.4s" repeatCount="indefinite"/>
+                                                    <animate attributeName="opacity" values="0.6;0"               dur="1.4s" repeatCount="indefinite"/>
+                                                </circle>
+                                            )}
+                                            <circle r={k.r}
+                                                fill={color} fillOpacity={alpha * 0.55}
+                                                stroke={color} strokeWidth={isSel ? 2.5 : isRel ? 2 : 0.8}
+                                                strokeOpacity={alpha} />
+                                            <text textAnchor="middle" dominantBaseline="middle"
+                                                fontSize={fontSize} fontWeight={isSel ? 'bold' : 'normal'}
+                                                fill={isDark ? '#fff' : '#1a1a1a'} fillOpacity={alpha}
+                                                style={{pointerEvents:'none', userSelect:'none'}}>
+                                                {shortLabel}
+                                            </text>
+                                        </g>
+                                    );
+                                })}
+                            </svg>
+                        </div>
+
+                        {/* サイドパネル */}
+                        <div className={`w-60 border-l overflow-y-auto flex-shrink-0 ${isDark ? 'border-gray-800 bg-[#1a1a1e]' : 'border-gray-200 bg-white'}`}>
+                            {selectedKw ? (
+                                <div className="p-4">
+                                    <div className="flex items-start justify-between mb-3">
+                                        <h3 className={`font-bold text-sm leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                            {selectedKw.keyword}
+                                        </h3>
+                                        <button onClick={() => setSelectedKw(null)}
+                                            className={`text-base leading-none ml-2 flex-shrink-0 ${isDark ? 'text-gray-500 hover:text-gray-200' : 'text-gray-400 hover:text-gray-700'}`}>✕</button>
+                                    </div>
+                                    {/* ソースバッジ */}
+                                    <div className="mb-3">
+                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium`}
+                                            style={{background: getColor(selectedKw.source) + (isDark ? '33' : '22'), color: getColor(selectedKw.source)}}>
+                                            {selectedKw.source === 'tv' ? 'TVメタデータ' : selectedKw.source === 'x' ? 'Xデータ' : 'クロスメディア'}
+                                        </span>
+                                    </div>
+                                    {/* スタッツ */}
+                                    <div className="grid grid-cols-2 gap-2 mb-3">
+                                        <div className={`rounded-lg p-2.5 text-center ${isDark ? 'bg-blue-900/30' : 'bg-blue-50'}`}>
+                                            <div className="text-xs text-blue-400 mb-0.5">TV露出</div>
+                                            <div className={`text-xl font-bold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>{selectedKw.tv}</div>
+                                        </div>
+                                        <div className={`rounded-lg p-2.5 text-center ${isDark ? 'bg-yellow-900/30' : 'bg-yellow-50'}`}>
+                                            <div className="text-xs text-yellow-400 mb-0.5">X露出</div>
+                                            <div className={`text-xl font-bold ${isDark ? 'text-yellow-300' : 'text-yellow-700'}`}>{selectedKw.x}</div>
+                                        </div>
+                                    </div>
+                                    <div className={`rounded-lg p-2.5 text-center mb-4 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}>
+                                        <div className={`text-xs mb-0.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>合計スコア</div>
+                                        <div className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedKw.total}</div>
+                                    </div>
+                                    {related.length > 0 && (
+                                        <>
+                                            <div className={`text-xs font-semibold mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>関連キーワード</div>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {related.map(r => (
+                                                    <button key={r.keyword} onClick={() => setSelectedKw(r)}
+                                                        className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                                                            isDark ? 'bg-purple-900/50 text-purple-300 hover:bg-purple-800/70' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                                        }`}>
+                                                        {r.keyword}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="p-4">
+                                    <div className={`text-xs font-semibold mb-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>TOP キーワード</div>
+                                    <div className="space-y-0.5">
+                                        {allKeywords.slice(0, 18).map((k, i) => (
+                                            <button key={k.keyword} onClick={() => setSelectedKw(k)}
+                                                className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                                                    isDark ? 'hover:bg-gray-800 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
+                                                }`}>
+                                                <span className="flex items-center gap-1.5 min-w-0">
+                                                    <span className={`w-5 text-right font-bold flex-shrink-0 ${i < 3 ? 'text-yellow-400' : (isDark ? 'text-gray-600' : 'text-gray-400')}`}>{i+1}</span>
+                                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background: getColor(k.source)}}></span>
+                                                    <span className="truncate">{k.keyword}</span>
+                                                </span>
+                                                <span className={`font-bold flex-shrink-0 ml-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{k.total}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // PositioningMapView コンポーネント
+        const PositioningMapView = ({ theme }) => {
+            const isDark = theme === 'dark';
+            const [mode, setMode] = React.useState(0);
+            const [selected, setSelected] = React.useState(null);
+            const [hoveredKw, setHoveredKw] = React.useState(null);
+
+            // ── 日付ユーティリティ（RankingView・KeywordMapViewと共通仕様） ──
+            const parseTVDate  = (s) => { if (!s) return null; const [y,m,d] = s.split('/').map(Number); return new Date(y, m-1, d); };
+            const parseXDate   = (s) => { if (!s) return null; const mt = s.match(/(\d+)年(\d+)月(\d+)日/); return mt ? new Date(+mt[1], +mt[2]-1, +mt[3]) : null; };
+            const toInputVal   = (d) => { if (!d) return ''; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+            const fromInputVal = (s) => s ? new Date(s + 'T00:00:00') : null;
+
+            const { dataMinDate, dataMaxDate } = React.useMemo(() => {
+                let mn = null, mx = null;
+                window.TV_META_DATA.forEach(d => { const dt = parseTVDate(d.date); if (!dt) return; if (!mn||dt<mn) mn=dt; if (!mx||dt>mx) mx=dt; });
+                window.X_DATA.forEach(day  => { const dt = parseXDate(day.date);  if (!dt) return; if (!mn||dt<mn) mn=dt; if (!mx||dt>mx) mx=dt; });
+                return { dataMinDate: mn, dataMaxDate: mx };
+            }, []);
+
+            const [startDate, setStartDate] = React.useState(() => dataMinDate);
+            const [endDate,   setEndDate]   = React.useState(() => dataMaxDate);
+
+            const setQuick = (days) => {
+                if (!dataMaxDate) return;
+                if (days === 0) { setStartDate(dataMinDate); setEndDate(dataMaxDate); setSelected(null); return; }
+                const s = new Date(dataMaxDate); s.setDate(s.getDate() - (days - 1));
+                setStartDate(s < dataMinDate ? dataMinDate : s); setEndDate(dataMaxDate); setSelected(null);
+            };
+
+            const filteredTV = React.useMemo(() => window.TV_META_DATA.filter(d => {
+                const dt = parseTVDate(d.date); if (!dt) return false;
+                if (startDate && dt < startDate) return false;
+                if (endDate   && dt > endDate)   return false;
+                return true;
+            }), [startDate, endDate]);
+
+            const filteredX = React.useMemo(() => window.X_DATA.filter(day => {
+                const dt = parseXDate(day.date); if (!dt) return false;
+                if (startDate && dt < startDate) return false;
+                if (endDate   && dt > endDate)   return false;
+                return true;
+            }), [startDate, endDate]);
+
+            // ────────────────────────────────────────────
+            // 辞書定義
+            // ────────────────────────────────────────────
+            const DICTS = {
+                // Mode 0 — 話題性 × 新規性
+                novel:  ['急増','ブーム','初上陸','新登場','注目','トレンド','上陸','第','専門店急増','拡大中','急上昇','再ブーム','再来','話題','急拡大','沸騰','続々','ネクスト','進化','急浮上'],
+                legacy: ['定番','定着','伝統','昔ながら','根強い','老舗','定番化','日常化','再評価','江戸','古来','王道','懐かし','歴史','リバイバル','定番に','常連'],
+                // Mode 1 — ターゲット × 価格帯
+                young:  ['Z世代','韓国','SNS映え','コラボ','推し活','アニメ','食べ歩き','インスタ','若者','TikTok','キャラクター','ゲーム','若年','K-','コグマ','ヲタク'],
+                senior: ['健康','薬膳','腸活','伝統','和食','老舗','機能性','温活','低糖質','免疫','高齢','シニア','中高年','ミドル','滋養'],
+                highPrice: ['高級','プレミアム','贈答','ギフト','1000円','ホテル','百貨店','プチ贅沢','限定','職人','高付加価値','和牛','オマール','希少'],
+                lowPrice:  ['コスパ','節約','激安','PB','コンビニ','時短','低コスト','代替','100円','まとめ買い','物価高対策','節約志向','お得','ワケあり','防衛'],
+                // Mode 2 — 感情 × 日常非日常
+                emotional: ['癒やし','感動','映え','推し','ノスタルジー','やみつき','絶品','かわいい','楽しい','感激','泣ける','ドラマ','共感','ほっこり','サプライズ','幸せ'],
+                practical: ['栄養','タンパク質','時短','タイパ','健康','低糖質','節約','コスパ','簡単','機能性','効率','実用','便利','レシピ'],
+                nonDaily: ['期間限定','フェス','イベント','万博','コラボ','体験','旅行','観光','初登場','特別','ラグジュアリー','非日常','限定','プレミアム'],
+                daily:    ['おうちごはん','毎日','お弁当','朝食','常備','作り置き','普段使い','日常','定番','家族','夕食','昼食','おやつ','日常的']
+            };
+
+            const MODES = [
+                {
+                    name: '話題性 × 新規性',
+                    xLabel: ['テレビで話題', 'Xで話題'],
+                    yLabel: ['伝統的・定番', '新規・流行'],
+                    quadrants: ['TV×定番\n（安定型コンテンツ）', 'SNS×新規\n（急浮上トレンド）', 'TV×新規\n（メディア主導の新潮流）', 'SNS×定番\n（ロングテール人気）'],
+                    colors: ['#3b82f6', '#f59e0b']
+                },
+                {
+                    name: 'ターゲット × 価格帯',
+                    xLabel: ['若者向け', 'シニア向け'],
+                    yLabel: ['低価格', '高価格'],
+                    quadrants: ['若者×低価格\n（コスパ重視世代）', 'シニア×高価格\n（健康投資層）', '若者×高価格\n（プレミアム体験）', 'シニア×低価格\n（日常的健康食）'],
+                    colors: ['#10b981', '#8b5cf6']
+                },
+                {
+                    name: '感情 × 日常・非日常',
+                    xLabel: ['実用的', '感情的'],
+                    yLabel: ['日常的', '非日常的'],
+                    quadrants: ['実用×日常\n（生活必需型）', '感情×非日常\n（体験・エンタメ型）', '実用×非日常\n（機能性イベント）', '感情×日常\n（癒やし・定番嗜好）'],
+                    colors: ['#f43f5e', '#14b8a6']
+                }
+            ];
+
+            // ────────────────────────────────────────────
+            // スコア算出
+            // ────────────────────────────────────────────
+            const plotData = React.useMemo(() => {
+                // テーマ単位でキーワード収集
+                const themes = {};
+                filteredTV.forEach(d => {
+                    const key = d.theme ? d.theme.trim() : null;
+                    if (!key || key.length < 2) return;
+                    if (!themes[key]) themes[key] = { tv: 0, x: 0, texts: [] };
+                    themes[key].tv += 1;
+                    const parts = [d.explanation || '', d.tags || '', d.headline || '', d.genre || ''];
+                    themes[key].texts.push(parts.join(' '));
+                });
+
+                // X側は tags/summary/explanation から近いテーマへマッピング
+                filteredX.forEach(day => {
+                    (day.posts || []).forEach(p => {
+                        const combined = (p.explanation || '') + ' ' + (p.text || '');
+                        Object.keys(themes).forEach(th => {
+                            const thWords = th.replace(/[（(）)・]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+                            if (thWords.some(w => combined.includes(w))) {
+                                themes[th].x += 1;
+                                themes[th].texts.push(combined);
+                            }
+                        });
+                    });
+                    const dayText = (day.summary || '') + ' ' + (day.tags || '');
+                    Object.keys(themes).forEach(th => {
+                        const thWords = th.replace(/[（(）)・]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+                        if (thWords.some(w => dayText.includes(w))) {
+                            themes[th].x += 0.5;
+                            themes[th].texts.push(dayText);
+                        }
+                    });
+                });
+
+                const score = (texts, posWords, negWords) => {
+                    let s = 0;
+                    texts.forEach(t => {
+                        posWords.forEach(w => { if (t.includes(w)) s += 1; });
+                        negWords.forEach(w => { if (t.includes(w)) s -= 1; });
+                    });
+                    return s;
+                };
+
+                const items = Object.entries(themes)
+                    .filter(([, d]) => d.tv >= 1)
+                    .map(([theme, d]) => {
+                        const tv = d.tv, x = d.x, texts = d.texts;
+                        const total = tv + x;
+                        // Mode 0
+                        const xDiff = (x - tv) / Math.max(total, 1); // -1〜+1 (右=X)
+                        const novelScore = score(texts, DICTS.novel, DICTS.legacy);
+                        // Mode 1
+                        const youngScore = score(texts, DICTS.young, DICTS.senior) * 0.6 + (x - tv) / Math.max(total, 1) * 2;
+                        const priceScore = score(texts, DICTS.highPrice, DICTS.lowPrice);
+                        // Mode 2
+                        const emoScore  = score(texts, DICTS.emotional, DICTS.practical);
+                        const nonDailyScore = score(texts, DICTS.nonDaily, DICTS.daily);
+                        return { theme, tv, x, total, xDiff, novelScore, youngScore, priceScore, emoScore, nonDailyScore };
+                    })
+                    .sort((a, b) => b.total - a.total)
+                    .slice(0, 55);
+
+                // 正規化（z-score + クランプ）
+                const normalize = (arr, key) => {
+                    const vals = arr.map(d => d[key]);
+                    const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+                    const std  = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length) || 1;
+                    return arr.map(d => ({ ...d, [key + '_n']: Math.max(-1, Math.min(1, (d[key] - mean) / (std * 1.5))) }));
+                };
+
+                let result = items;
+                result = normalize(result, 'xDiff');
+                result = normalize(result, 'novelScore');
+                result = normalize(result, 'youngScore');
+                result = normalize(result, 'priceScore');
+                result = normalize(result, 'emoScore');
+                result = normalize(result, 'nonDailyScore');
+                return result;
+            }, [filteredTV, filteredX]);
+
+            const m = MODES[mode];
+
+            // モードごとの軸値取得
+            const getXY = (d) => {
+                if (mode === 0) return { x: d.xDiff_n,        y: d.novelScore_n };
+                if (mode === 1) return { x: -d.youngScore_n,  y: d.priceScore_n };
+                return                  { x: d.emoScore_n,     y: d.nonDailyScore_n };
+            };
+
+            // SVG座標変換
+            const W = 860, H = 560, PAD = 56, BP = 24;
+            const toSVG = (nx, ny) => ({
+                svgX: PAD + BP + (nx + 1) / 2 * (W - PAD * 2 - BP * 2),
+                svgY: PAD + BP + (1 - (ny + 1) / 2) * (H - PAD * 2 - BP * 2)
+            });
+
+            const bubbleR = (d) => Math.max(9, Math.min(26, 9 + d.total * 1.2));
+
+            // 選択アイテム情報
+            const selItem = selected ? plotData.find(d => d.theme === selected) : null;
+            const nearItems = selItem ? (() => {
+                const { x: sx, y: sy } = getXY(selItem);
+                return plotData
+                    .filter(d => d.theme !== selItem.theme)
+                    .map(d => { const { x, y } = getXY(d); return { ...d, dist: Math.hypot(x - sx, y - sy) }; })
+                    .sort((a, b) => a.dist - b.dist)
+                    .slice(0, 4);
+            })() : [];
+
+            return (
+                <div className={`flex-1 flex flex-col overflow-hidden ${isDark ? 'bg-[#131314]' : 'bg-gray-50'}`}>
+                    {/* ヘッダー */}
+                    <div className={`px-6 py-4 border-b flex-shrink-0 ${isDark ? 'border-gray-800 bg-[#1a1a1e]' : 'border-gray-200 bg-white'}`}>
+                        <div className="flex items-start gap-3 flex-wrap">
+                            <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                                <i className="ph ph-chart-scatter text-xl text-emerald-400"></i>
+                                <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>ポジショニングマップ</h2>
+                            </div>
+                            {/* 日付範囲選択 */}
+                            <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                                <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-sm ${isDark ? 'border-gray-700 bg-[#131314]' : 'border-gray-300 bg-gray-50'}`}>
+                                    <i className={`ph ph-calendar text-base ${isDark ? 'text-gray-400' : 'text-gray-500'}`}></i>
+                                    <input type="date"
+                                        value={toInputVal(startDate)}
+                                        min={toInputVal(dataMinDate)} max={toInputVal(endDate)}
+                                        onChange={e => { setStartDate(fromInputVal(e.target.value) || dataMinDate); setSelected(null); }}
+                                        className={`bg-transparent outline-none text-sm w-32 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
+                                        style={{colorScheme: isDark ? 'dark' : 'light'}} />
+                                    <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>〜</span>
+                                    <input type="date"
+                                        value={toInputVal(endDate)}
+                                        min={toInputVal(startDate)} max={toInputVal(dataMaxDate)}
+                                        onChange={e => { setEndDate(fromInputVal(e.target.value) || dataMaxDate); setSelected(null); }}
+                                        className={`bg-transparent outline-none text-sm w-32 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
+                                        style={{colorScheme: isDark ? 'dark' : 'light'}} />
+                                </div>
+                                {/* クイック選択 */}
+                                <div className="flex gap-1">
+                                    {[['7日', 7], ['14日', 14], ['全期間', 0]].map(([lbl, d]) => (
+                                        <button key={lbl} onClick={() => setQuick(d)}
+                                            className={`px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors whitespace-nowrap ${isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                                            {lbl === '全期間' ? lbl : `直近${lbl}`}
+                                        </button>
+                                    ))}
+                                </div>
+                                {/* 件数サマリー */}
+                                <span className={`text-xs ml-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    TV {filteredTV.length}件 ／ X {filteredX.length}日分
+                                </span>
+                            </div>
+                            {/* モード切替 */}
+                            <div className="flex gap-1.5 flex-wrap flex-shrink-0">
+                                {MODES.map((md, i) => (
+                                    <button key={i} onClick={() => { setMode(i); setSelected(null); }}
+                                        className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors whitespace-nowrap ${
+                                            mode === i
+                                                ? (isDark ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white')
+                                                : (isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100')
+                                        }`}>
+                                        {md.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* メインコンテンツ */}
+                    <div className="flex-1 flex overflow-hidden min-h-0">
+                        {/* SVGエリア */}
+                        <div className="flex-1 overflow-hidden p-2 flex items-center justify-center">
+                            <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%', height:'100%', display:'block'}}>
+                                <defs>
+                                    <pattern id="pgrid" x="0" y="0" width="50" height="50" patternUnits="userSpaceOnUse">
+                                        <path d={`M 50 0 L 0 0 0 50`} fill="none" stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)'} strokeWidth="1"/>
+                                    </pattern>
+                                    <clipPath id="plotClip">
+                                        <rect x={0} y={0} width={W} height={H}/>
+                                    </clipPath>
+                                </defs>
+
+                                {/* 背景 */}
+                                <rect width={W} height={H} fill={isDark ? '#131314' : '#f9fafb'}/>
+                                <rect x={PAD} y={PAD} width={W - PAD * 2} height={H - PAD * 2} fill="url(#pgrid)"/>
+
+                                {/* 4象限の背景色 */}
+                                {[
+                                    [PAD,          PAD,          (W-PAD*2)/2, (H-PAD*2)/2],
+                                    [(W+PAD*2)/2 - PAD, PAD,    (W-PAD*2)/2, (H-PAD*2)/2],
+                                    [PAD,          (H+PAD*2)/2-PAD, (W-PAD*2)/2, (H-PAD*2)/2],
+                                    [(W+PAD*2)/2 - PAD, (H+PAD*2)/2-PAD, (W-PAD*2)/2, (H-PAD*2)/2]
+                                ].map(([rx, ry, rw, rh], qi) => (
+                                    <rect key={qi} x={rx} y={ry} width={rw} height={rh}
+                                        fill={qi % 2 === 0 ? (isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.012)') : 'transparent'}/>
+                                ))}
+
+                                {/* 軸線 */}
+                                <line x1={PAD} y1={H/2} x2={W-PAD} y2={H/2} stroke={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'} strokeWidth="1.5"/>
+                                <line x1={W/2} y1={PAD} x2={W/2} y2={H-PAD} stroke={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'} strokeWidth="1.5"/>
+
+                                {/* 軸矢印 */}
+                                {[[W-PAD, H/2, W-PAD+8, H/2, W-PAD, H/2-5, W-PAD, H/2+5],
+                                  [PAD, H/2, PAD-8, H/2, PAD, H/2-5, PAD, H/2+5],
+                                  [W/2, PAD, W/2, PAD-8, W/2-5, PAD, W/2+5, PAD],
+                                  [W/2, H-PAD, W/2, H-PAD+8, W/2-5, H-PAD, W/2+5, H-PAD]
+                                ].map(([x1,y1,tx,ty,lx,ly,rx,ry], ai) => (
+                                    <polygon key={ai} points={`${tx},${ty} ${lx},${ly} ${rx},${ry}`}
+                                        fill={isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'}/>
+                                ))}
+
+                                {/* 軸ラベル */}
+                                <text x={PAD + 8} y={H/2 - 10} fontSize="15" fill={isDark ? '#d1d5db' : '#374151'} fontWeight="700">{m.xLabel[0]}</text>
+                                <text x={W - PAD - 8} y={H/2 - 10} fontSize="15" fill={isDark ? '#d1d5db' : '#374151'} fontWeight="700" textAnchor="end">{m.xLabel[1]}</text>
+                                <text x={W/2 + 8} y={PAD + 18} fontSize="15" fill={isDark ? '#d1d5db' : '#374151'} fontWeight="700">{m.yLabel[1]}</text>
+                                <text x={W/2 + 8} y={H - PAD - 8} fontSize="15" fill={isDark ? '#d1d5db' : '#374151'} fontWeight="700">{m.yLabel[0]}</text>
+
+                                {/* 象限ラベル */}
+                                {[
+                                    [PAD + 12,   PAD + 20,   'start', m.quadrants[2]],
+                                    [W - PAD - 12, PAD + 20, 'end',   m.quadrants[1]],
+                                    [PAD + 12,   H - PAD - 24, 'start', m.quadrants[0]],
+                                    [W - PAD - 12, H - PAD - 24, 'end', m.quadrants[3]]
+                                ].map(([qx, qy, anchor, label], qi) => (
+                                    label.split('\n').map((line, li) => (
+                                        <text key={`${qi}-${li}`} x={qx} y={qy + li * 16}
+                                            fontSize="11.5" textAnchor={anchor}
+                                            fill={isDark ? 'rgba(156,163,175,0.55)' : 'rgba(107,114,128,0.55)'}
+                                            fontStyle="italic">
+                                            {line}
+                                        </text>
+                                    ))
+                                ))}
+
+                                {/* バブル */}
+                                <g>
+                                    {plotData.map((d, idx) => {
+                                        const { x, y } = getXY(d);
+                                        const { svgX, svgY } = toSVG(x, y);
+                                        const r = bubbleR(d);
+                                        const isSel = selected === d.theme;
+                                        const isNear = nearItems.some(n => n.theme === d.theme);
+                                        const isHov  = hoveredKw === d.theme;
+                                        const baseColor = mode === 0 ? (x > 0 ? '#f59e0b' : '#3b82f6')
+                                                        : mode === 1 ? (y > 0 ? '#8b5cf6' : '#10b981')
+                                                        : (x > 0 ? '#f43f5e' : '#14b8a6');
+                                        const alpha = selected ? (isSel || isNear ? 1 : 0.15) : (isHov ? 1 : 0.8);
+                                        const label = d.theme.length > 10 ? d.theme.slice(0, 10) + '…' : d.theme;
+                                        const fontSize = Math.max(9, Math.min(13.5, r * 0.72));
+                                        // 上位13件 or ホバー/選択中のみラベル常時表示
+                                        const showLabel = idx < 13 || isSel || isHov;
+                                        return (
+                                            <g key={d.theme}
+                                                transform={`translate(${svgX},${svgY})`}
+                                                onClick={() => setSelected(isSel ? null : d.theme)}
+                                                onMouseEnter={() => setHoveredKw(d.theme)}
+                                                onMouseLeave={() => setHoveredKw(null)}
+                                                style={{cursor: 'pointer'}}>
+                                                {isSel && (
+                                                    <circle r={r + 5} fill="none" stroke={baseColor} strokeWidth="1.5" opacity="0">
+                                                        <animate attributeName="r" values={`${r+3};${r+14}`} dur="1.5s" repeatCount="indefinite"/>
+                                                        <animate attributeName="opacity" values="0.7;0" dur="1.5s" repeatCount="indefinite"/>
+                                                    </circle>
+                                                )}
+                                                <circle r={r}
+                                                    fill={baseColor} fillOpacity={alpha * 0.45}
+                                                    stroke={baseColor} strokeWidth={isSel ? 2.5 : isNear ? 2 : 1}
+                                                    strokeOpacity={alpha}/>
+                                                {showLabel && (
+                                                    <text textAnchor="middle" dominantBaseline="middle"
+                                                        fontSize={fontSize} fontWeight={isSel ? 'bold' : 'normal'}
+                                                        fill={isDark ? '#fff' : '#111'} fillOpacity={alpha}
+                                                        style={{pointerEvents:'none', userSelect:'none'}}>
+                                                        {label}
+                                                    </text>
+                                                )}
+                                            </g>
+                                        );
+                                    })}
+                                </g>
+
+                                {/* 凡例 */}
+                                <rect x={PAD} y={H - PAD + 20} width={220} height={20} fill="transparent"/>
+                                <circle cx={PAD + 8}  cy={H - PAD + 30} r="6" fill={m.colors[0]} fillOpacity="0.6" stroke={m.colors[0]} strokeWidth="1"/>
+                                <text x={PAD + 18} y={H - PAD + 34} fontSize="11" fill={isDark ? '#9ca3af' : '#6b7280'}>{m.xLabel[0]}寄り</text>
+                                <circle cx={PAD + 100} cy={H - PAD + 30} r="6" fill={m.colors[1]} fillOpacity="0.6" stroke={m.colors[1]} strokeWidth="1"/>
+                                <text x={PAD + 110} y={H - PAD + 34} fontSize="11" fill={isDark ? '#9ca3af' : '#6b7280'}>{m.xLabel[1]}寄り</text>
+                            </svg>
+                        </div>
+
+                        {/* サイドパネル */}
+                        <div className={`w-64 border-l overflow-y-auto flex-shrink-0 ${isDark ? 'border-gray-800 bg-[#1a1a1e]' : 'border-gray-200 bg-white'}`}>
+                            {selItem ? (() => {
+                                const { x, y } = getXY(selItem);
+                                const quadrant = x > 0 && y > 0 ? 1 : x < 0 && y > 0 ? 2 : x < 0 && y < 0 ? 3 : 4;
+                                const qMap = { 1: m.quadrants[1], 2: m.quadrants[2], 3: m.quadrants[0], 4: m.quadrants[3] };
+                                const qLabel = (qMap[quadrant] || '').split('\n')[0];
+                                const qSub   = (qMap[quadrant] || '').split('\n')[1];
+                                const tvRecs = window.TV_META_DATA.filter(d =>
+                                    d.theme && (d.theme.trim() === selItem.theme ||
+                                    (d.tags || '').includes(selItem.theme.split(/[（(・]/)[0].trim()))
+                                ).slice(0, 4);
+                                return (
+                                    <div className="p-4">
+                                        <div className="flex items-start justify-between mb-2">
+                                            <h3 className={`font-bold text-sm leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>{selItem.theme}</h3>
+                                            <button onClick={() => setSelected(null)} className={`text-base ml-2 flex-shrink-0 ${isDark ? 'text-gray-500 hover:text-gray-200' : 'text-gray-400 hover:text-gray-700'}`}>✕</button>
+                                        </div>
+
+                                        {/* 象限バッジ */}
+                                        <div className={`rounded-lg px-3 py-2 mb-3 ${isDark ? 'bg-emerald-900/30' : 'bg-emerald-50'}`}>
+                                            <div className={`text-xs font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>{qLabel}</div>
+                                            {qSub && <div className={`text-xs mt-0.5 ${isDark ? 'text-emerald-500/70' : 'text-emerald-600/70'}`}>{qSub}</div>}
+                                        </div>
+
+                                        {/* 軸スコア */}
+                                        <div className="mb-3">
+                                            <div className={`text-xs font-semibold mb-1.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>軸スコア</div>
+                                            {[
+                                                [m.xLabel[0], m.xLabel[1], x],
+                                                [m.yLabel[0], m.yLabel[1], y]
+                                            ].map(([lNeg, lPos, val], si) => (
+                                                <div key={si} className="mb-2">
+                                                    <div className="flex justify-between text-xs mb-0.5">
+                                                        <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>{lNeg}</span>
+                                                        <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>{lPos}</span>
+                                                    </div>
+                                                    <div className={`relative h-2 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                                                        <div className={`absolute h-2 rounded-full ${val >= 0 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                                                            style={{ left: val >= 0 ? '50%' : `${(val + 1) / 2 * 100}%`, width: `${Math.abs(val) / 2 * 100}%` }}/>
+                                                        <div className="absolute top-0 bottom-0 w-0.5 bg-gray-500 left-1/2"/>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* 露出数 */}
+                                        <div className="grid grid-cols-3 gap-1.5 mb-3">
+                                            {[['TV', selItem.tv, 'blue'], ['X', Math.round(selItem.x), 'yellow'], ['合計', selItem.total, 'gray']].map(([lbl, val, c]) => (
+                                                <div key={lbl} className={`rounded-lg p-2 text-center ${isDark ? `bg-${c}-900/30` : `bg-${c}-50`}`}>
+                                                    <div className={`text-xs ${isDark ? `text-${c}-400` : `text-${c}-600`}`}>{lbl}</div>
+                                                    <div className={`text-lg font-bold ${isDark ? `text-${c}-300` : `text-${c}-700`}`}>{val}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* 近隣キーワード */}
+                                        {nearItems.length > 0 && (
+                                            <div className="mb-3">
+                                                <div className={`text-xs font-semibold mb-1.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>近接キーワード</div>
+                                                <div className="space-y-1">
+                                                    {nearItems.map(n => (
+                                                        <button key={n.theme} onClick={() => setSelected(n.theme)}
+                                                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between ${isDark ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                                                            <span className="truncate">{n.theme}</span>
+                                                            <span className={`text-xs flex-shrink-0 ml-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>▶</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* TV番組根拠 */}
+                                        {tvRecs.length > 0 && (
+                                            <div>
+                                                <div className={`text-xs font-semibold mb-1.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>TV放送の根拠</div>
+                                                {tvRecs.map((r, ri) => (
+                                                    <div key={ri} className={`rounded-lg p-2 mb-1.5 text-xs ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}>
+                                                        <div className={`font-semibold mb-0.5 ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>{r.station}「{r.program}」</div>
+                                                        <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{r.headline}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })() : (
+                                <div className="p-4">
+                                    <div className={`text-xs font-semibold mb-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>プロット一覧（{plotData.length}件）</div>
+                                    <div className="space-y-0.5">
+                                        {plotData.map((d, i) => {
+                                            const { x, y } = getXY(d);
+                                            const baseColor = mode === 0 ? (x > 0 ? '#f59e0b' : '#3b82f6')
+                                                            : mode === 1 ? (y > 0 ? '#8b5cf6' : '#10b981')
+                                                            : (x > 0 ? '#f43f5e' : '#14b8a6');
+                                            return (
+                                                <button key={d.theme} onClick={() => setSelected(d.theme)}
+                                                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-300' : 'hover:bg-gray-100 text-gray-700'}`}>
+                                                    <span className="flex items-center gap-1.5 min-w-0">
+                                                        <span className={`font-bold flex-shrink-0 w-5 text-right ${i < 3 ? 'text-yellow-400' : (isDark ? 'text-gray-600' : 'text-gray-400')}`}>{i+1}</span>
+                                                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background: baseColor}}/>
+                                                        <span className="truncate">{d.theme}</span>
+                                                    </span>
+                                                    <span className={`font-bold flex-shrink-0 ml-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{d.total}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ReportView コンポーネント
+        // =============================================
+        const ReportView = ({ theme, apiKey }) => {
+            const isDark = theme === 'dark';
+
+            // ── 日付ユーティリティ（他ビューと共通仕様） ──
+            const parseTVDate  = (s) => { if (!s) return null; const [y,m,d] = s.split('/').map(Number); return new Date(y, m-1, d); };
+            const parseXDate   = (s) => { if (!s) return null; const mt = s.match(/(\d+)年(\d+)月(\d+)日/); return mt ? new Date(+mt[1], +mt[2]-1, +mt[3]) : null; };
+            const toInputVal   = (d) => { if (!d) return ''; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+            const fromInputVal = (s) => s ? new Date(s + 'T00:00:00') : null;
+            const fmtDate      = (d) => { if (!d) return ''; return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; };
+
+            const { dataMinDate, dataMaxDate } = React.useMemo(() => {
+                let mn = null, mx = null;
+                window.TV_META_DATA.forEach(d => { const dt = parseTVDate(d.date); if (!dt) return; if (!mn||dt<mn) mn=dt; if (!mx||dt>mx) mx=dt; });
+                window.X_DATA.forEach(day  => { const dt = parseXDate(day.date);  if (!dt) return; if (!mn||dt<mn) mn=dt; if (!mx||dt>mx) mx=dt; });
+                return { dataMinDate: mn, dataMaxDate: mx };
+            }, []);
+
+            const [startDate, setStartDate] = React.useState(() => dataMinDate);
+            const [endDate,   setEndDate]   = React.useState(() => dataMaxDate);
+            const [isLoading, setIsLoading] = React.useState(false);
+            const [reportText, setReportText] = React.useState('');
+            const [error, setError] = React.useState('');
+
+            const setQuick = (days) => {
+                if (!dataMaxDate) return;
+                if (days === 0) { setStartDate(dataMinDate); setEndDate(dataMaxDate); return; }
+                const s = new Date(dataMaxDate); s.setDate(s.getDate() - (days - 1));
+                setStartDate(s < dataMinDate ? dataMinDate : s); setEndDate(dataMaxDate);
+            };
+
+            const filteredTV = React.useMemo(() => window.TV_META_DATA.filter(d => {
+                const dt = parseTVDate(d.date); if (!dt) return false;
+                if (startDate && dt < startDate) return false;
+                if (endDate   && dt > endDate)   return false;
+                return true;
+            }), [startDate, endDate]);
+
+            const filteredX = React.useMemo(() => window.X_DATA.filter(day => {
+                const dt = parseXDate(day.date); if (!dt) return false;
+                if (startDate && dt < startDate) return false;
+                if (endDate   && dt > endDate)   return false;
+                return true;
+            }), [startDate, endDate]);
+
+            const generateReport = async () => {
+                if (!apiKey) { setError('APIキーが設定されていません。設定画面からGemini APIキーを入力してください。'); return; }
+                setIsLoading(true);
+                setReportText('');
+                setError('');
+
+                const periodLabel = `${fmtDate(startDate)}〜${fmtDate(endDate)}`;
+
+                const systemPrompt = `あなたは食・グルメのトレンドを専門とするデータアナリストです。
+TVメタデータとX（旧Twitter）の投稿データを分析し、プロフェッショナルなトレンドレポートを日本語で作成してください。
+レポートはMarkdown形式で、見出し・箇条書きを適切に使い、読みやすく構成してください。`;
+
+                const userPrompt = `以下のデータ（対象期間: ${periodLabel}）を分析し、下記の構成でトレンドレポートを生成してください。
+
+# ${periodLabel} 食トレンドレポート
+
+## 1. 月次トレンドサマリー
+全体的な傾向を200字程度で簡潔にまとめてください。
+
+## 2. 注目テーマTOP5の詳細解説
+TVとXの両データを踏まえ、注目度の高いテーマを5つ選び、それぞれについて以下を記述してください：
+- テーマ名
+- TVでの取り上げられ方（放送回数・番組傾向）
+- Xでの反響（投稿傾向・消費者の声）
+- 消費者インサイト（このテーマが支持される背景・理由）
+
+## 3. TV × X 比較コメント
+- TVで多く取り上げられているがXでの反響が少ないテーマ（メディア先行型）
+- Xで話題だがTVではあまり取り上げられていないテーマ（SNS発信型）
+- 両方で盛り上がっているテーマ（共鳴型）
+
+## 4. 次月への予測・示唆
+- 来月注目すべきトレンド予測（2〜3項目）
+- 食品・飲食業界への推奨アクション
+
+---
+
+【TVメタデータ（${filteredTV.length}件）】
+${JSON.stringify(filteredTV.slice(0, 300))}
+
+【Xデータ】
+${JSON.stringify(filteredX)}`;
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            systemInstruction: { parts: [{ text: systemPrompt }] },
+                            contents: [{ role: 'user', parts: [{ text: userPrompt }] }]
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error.message);
+                    const text = data.candidates[0].content.parts[0].text;
+                    setReportText(text);
+                } catch (err) {
+                    setError(`レポートの生成に失敗しました: ${err.message}`);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleDownloadDocx = () => {
+                if (!reportText) return;
+                window.FILE_UTILS.generateDocx(reportText, window.FILE_UTILS.getFilename('docx'));
+            };
+            const handleDownloadPptx = () => {
+                if (!reportText) return;
+                window.FILE_UTILS.generatePptx(reportText, window.FILE_UTILS.getFilename('pptx'));
+            };
+            const handleCopyText = () => {
+                if (!reportText) return;
+                navigator.clipboard.writeText(reportText).then(() => {
+                    alert('テキストをクリップボードにコピーしました');
+                }).catch(() => alert('コピーに失敗しました'));
+            };
+
+            const cardBg  = isDark ? 'bg-[#1e1e20]' : 'bg-white';
+            const border  = isDark ? 'border-gray-700' : 'border-gray-200';
+            const subText = isDark ? 'text-gray-400' : 'text-gray-500';
+            const inputCls = `px-3 py-1.5 rounded-lg border text-sm ${isDark ? 'bg-[#2a2a2e] border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} focus:outline-none focus:ring-2 focus:ring-blue-500`;
+
+            return (
+                <div className={`flex-1 overflow-y-auto p-6 ${isDark ? 'bg-[#131314] text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
+                    <div className="max-w-4xl mx-auto">
+                        {/* ヘッダー */}
+                        <div className="mb-6">
+                            <h1 className="text-2xl font-bold flex items-center gap-2">
+                                <i className="ph ph-file-text text-blue-500"></i>
+                                レポート自動生成
+                            </h1>
+                            <p className={`text-sm mt-1 ${subText}`}>対象期間のTVメタデータ・Xデータを分析し、食トレンドレポートをAIが自動生成します。</p>
+                        </div>
+
+                        {/* 期間選択カード */}
+                        <div className={`${cardBg} border ${border} rounded-2xl p-5 mb-5`}>
+                            <h2 className="text-sm font-bold mb-3 flex items-center gap-1.5">
+                                <i className="ph ph-calendar text-blue-400"></i>
+                                対象期間
+                            </h2>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <div className="flex items-center gap-2">
+                                    <label className={`text-xs font-medium ${subText}`}>開始</label>
+                                    <input
+                                        type="date"
+                                        value={toInputVal(startDate)}
+                                        min={toInputVal(dataMinDate)}
+                                        max={toInputVal(endDate || dataMaxDate)}
+                                        onChange={e => { const d = fromInputVal(e.target.value); if(d) setStartDate(d); }}
+                                        className={inputCls}
+                                    />
+                                </div>
+                                <span className={`text-xs ${subText}`}>〜</span>
+                                <div className="flex items-center gap-2">
+                                    <label className={`text-xs font-medium ${subText}`}>終了</label>
+                                    <input
+                                        type="date"
+                                        value={toInputVal(endDate)}
+                                        min={toInputVal(startDate || dataMinDate)}
+                                        max={toInputVal(dataMaxDate)}
+                                        onChange={e => { const d = fromInputVal(e.target.value); if(d) setEndDate(d); }}
+                                        className={inputCls}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1.5 ml-2">
+                                    {[{label:'7日',days:7},{label:'14日',days:14},{label:'全期間',days:0}].map(({label,days}) => (
+                                        <button key={label} onClick={() => setQuick(days)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${isDark ? 'border-gray-600 bg-[#2a2a2e] text-gray-300 hover:bg-blue-600 hover:border-blue-600 hover:text-white' : 'border-gray-300 bg-gray-100 text-gray-600 hover:bg-blue-500 hover:border-blue-500 hover:text-white'}`}>
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className={`ml-auto text-xs ${subText}`}>
+                                    TV: {filteredTV.length}件 / X: {filteredX.length}日分
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 生成ボタン */}
+                        <div className="mb-5">
+                            <button
+                                onClick={generateReport}
+                                disabled={isLoading || !apiKey}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all shadow-lg ${
+                                    isLoading || !apiKey
+                                        ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white'
+                                }`}
+                            >
+                                {isLoading
+                                    ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>生成中...</>
+                                    : <><i className="ph ph-sparkle text-lg"></i>レポート自動生成</>
+                                }
+                            </button>
+                            {!apiKey && <p className="text-xs text-red-400 mt-2">※ 設定画面でGemini APIキーを入力してください</p>}
+                        </div>
+
+                        {/* エラー表示 */}
+                        {error && (
+                            <div className="mb-4 p-4 bg-red-900/30 border border-red-700 rounded-xl text-red-300 text-sm">
+                                <i className="ph ph-warning-circle mr-2"></i>{error}
+                            </div>
+                        )}
+
+                        {/* ローディング */}
+                        {isLoading && (
+                            <div className={`${cardBg} border ${border} rounded-2xl p-10 flex flex-col items-center gap-4`}>
+                                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                                <p className={`text-sm ${subText}`}>Gemini AIがデータを分析中です。しばらくお待ちください…</p>
+                            </div>
+                        )}
+
+                        {/* レポート表示 */}
+                        {reportText && !isLoading && (
+                            <div className={`${cardBg} border ${border} rounded-2xl overflow-hidden`}>
+                                {/* 出力ボタンバー */}
+                                <div className={`flex items-center gap-2 px-5 py-3 border-b ${border} ${isDark ? 'bg-[#252528]' : 'bg-gray-50'}`}>
+                                    <span className={`text-xs font-bold ${subText} mr-auto`}>
+                                        <i className="ph ph-check-circle text-green-400 mr-1"></i>
+                                        レポート生成完了
+                                    </span>
+                                    <button
+                                        onClick={handleDownloadDocx}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                                    >
+                                        <i className="ph ph-file-doc"></i>DOCX
+                                    </button>
+                                    <button
+                                        onClick={handleDownloadPptx}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange-600 hover:bg-orange-500 text-white transition-colors"
+                                    >
+                                        <i className="ph ph-presentation-chart"></i>PPTX
+                                    </button>
+                                    <button
+                                        onClick={handleCopyText}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}
+                                    >
+                                        <i className="ph ph-copy"></i>コピー
+                                    </button>
+                                </div>
+                                {/* Markdownレンダリング */}
+                                <div className="p-6">
+                                    <div
+                                        className={`markdown-body prose max-w-none text-sm leading-relaxed ${isDark ? 'prose-invert text-gray-200' : 'text-gray-800'}`}
+                                        dangerouslySetInnerHTML={{ __html: window.marked ? marked.parse(reportText) : reportText }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // RankingView コンポーネント
+        // =============================================
+        const RankingView = ({ theme }) => {
+            const [activeTab, setActiveTab] = React.useState('theme');
+            const isDark = theme === 'dark';
+
+            // ── 日付ユーティリティ ──────────────────────────────
+            // TV日付 "2025/10/1" → Date
+            const parseTVDate = (s) => {
+                if (!s) return null;
+                const [y, m, d] = s.split('/').map(Number);
+                return new Date(y, m - 1, d);
+            };
+            // X日付 "2025年10月1日" → Date
+            const parseXDate = (s) => {
+                if (!s) return null;
+                const m = s.match(/(\d+)年(\d+)月(\d+)日/);
+                return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+            };
+            // Date → "YYYY-MM-DD"（input[type=date]用）
+            const toInputVal = (d) => {
+                if (!d) return '';
+                const y = d.getFullYear();
+                const mo = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${mo}-${day}`;
+            };
+            // "YYYY-MM-DD" → Date
+            const fromInputVal = (s) => s ? new Date(s + 'T00:00:00') : null;
+            // Date → "YYYY年M月D日" 表示用
+            const toJa = (d) => d ? `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日` : '';
+
+            // ── データ全体の日付範囲を算出（初期値） ─────────────
+            const { dataMinDate, dataMaxDate } = React.useMemo(() => {
+                let mn = null, mx = null;
+                window.TV_META_DATA.forEach(d => {
+                    const dt = parseTVDate(d.date);
+                    if (!dt) return;
+                    if (!mn || dt < mn) mn = dt;
+                    if (!mx || dt > mx) mx = dt;
+                });
+                window.X_DATA.forEach(day => {
+                    const dt = parseXDate(day.date);
+                    if (!dt) return;
+                    if (!mn || dt < mn) mn = dt;
+                    if (!mx || dt > mx) mx = dt;
+                });
+                return { dataMinDate: mn, dataMaxDate: mx };
+            }, []);
+
+            const [startDate, setStartDate] = React.useState(() => dataMinDate);
+            const [endDate,   setEndDate]   = React.useState(() => dataMaxDate);
+
+            // ── フィルタ済みデータ ──────────────────────────────
+            const filteredTV = React.useMemo(() => {
+                return window.TV_META_DATA.filter(d => {
+                    const dt = parseTVDate(d.date);
+                    if (!dt) return false;
+                    if (startDate && dt < startDate) return false;
+                    if (endDate   && dt > endDate)   return false;
+                    return true;
+                });
+            }, [startDate, endDate]);
+
+            const filteredX = React.useMemo(() => {
+                return window.X_DATA.filter(day => {
+                    const dt = parseXDate(day.date);
+                    if (!dt) return false;
+                    if (startDate && dt < startDate) return false;
+                    if (endDate   && dt > endDate)   return false;
+                    return true;
+                });
+            }, [startDate, endDate]);
+
+            // クイック選択
+            const setQuick = (days) => {
+                if (!dataMaxDate) return;
+                if (days === 0) { setStartDate(dataMinDate); setEndDate(dataMaxDate); return; }
+                const s = new Date(dataMaxDate);
+                s.setDate(s.getDate() - (days - 1));
+                setStartDate(s < dataMinDate ? dataMinDate : s);
+                setEndDate(dataMaxDate);
+            };
+
+            // --- 1. TVテーマ別ランキング ---
+            const themeRanking = React.useMemo(() => {
+                const counts = {};
+                filteredTV.forEach(d => {
+                    const key = (d.theme || '不明').trim();
+                    counts[key] = (counts[key] || 0) + 1;
+                });
+                return Object.entries(counts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 15)
+                    .map(([name, count]) => ({ name, count }));
+            }, [filteredTV]);
+
+            // --- 2. TV番組別ランキング ---
+            const programRanking = React.useMemo(() => {
+                const counts = {};
+                filteredTV.forEach(d => {
+                    const key = (d.program || '不明').trim();
+                    counts[key] = (counts[key] || 0) + 1;
+                });
+                return Object.entries(counts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 10)
+                    .map(([name, count]) => ({ name, count }));
+            }, [filteredTV]);
+
+            // --- 3. TV局別ランキング ---
+            const stationRanking = React.useMemo(() => {
+                const counts = {};
+                filteredTV.forEach(d => {
+                    const key = (d.station || '不明').trim();
+                    counts[key] = (counts[key] || 0) + 1;
+                });
+                return Object.entries(counts)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([name, count]) => ({ name, count }));
+            }, [filteredTV]);
+
+            // --- 4. Xエンゲージメントランキング ---
+            const xEngagementRanking = React.useMemo(() => {
+                const posts = [];
+                filteredX.forEach(day => {
+                    (day.posts || []).forEach(post => {
+                        if (!post.engagement || post.engagement === '-') return;
+                        const likeMatch  = post.engagement.match(/Like:([\d,]+)/);
+                        const repostMatch = post.engagement.match(/Repost:([\d,]+)/);
+                        const viewMatch  = post.engagement.match(/View:([\d,]+)/);
+                        const like   = likeMatch   ? parseInt(likeMatch[1].replace(/,/g, ''))   : 0;
+                        const repost = repostMatch ? parseInt(repostMatch[1].replace(/,/g, '')) : 0;
+                        const view   = viewMatch   ? parseInt(viewMatch[1].replace(/,/g, ''))   : 0;
+                        posts.push({
+                            date: day.date,
+                            text: post.text ? (post.text.length > 38 ? post.text.substring(0, 38) + '…' : post.text) : '',
+                            explanation: post.explanation || '',
+                            like, repost, view,
+                            url: post.url || '#',
+                            total: like + repost
+                        });
+                    });
+                });
+                return posts.filter(p => p.total > 0).sort((a, b) => b.total - a.total).slice(0, 15);
+            }, [filteredX]);
+
+            // --- 5. クロスメディアランキング ---
+            const crossRanking = React.useMemo(() => {
+                const STOP = new Set(['グルメ','おはようございます','レシピ','秋グルメ','おうちごはん',
+                    '健康ごはん','時短ごはん','コンビニ新商品','EXPO2025','大阪関西万博','万博グルメ']);
+                // X タグ集計
+                const xTagCounts = {};
+                filteredX.forEach(day => {
+                    if (!day.tags) return;
+                    day.tags.split(',').forEach(tag => {
+                        const t = tag.trim().replace(/^#/, '');
+                        if (t.length >= 3 && !STOP.has(t)) xTagCounts[t] = (xTagCounts[t] || 0) + 1;
+                    });
+                });
+                // TV キーワード集計（theme + tags）
+                const tvKwCounts = {};
+                filteredTV.forEach(d => {
+                    const items = [];
+                    if (d.theme) items.push(d.theme.trim());
+                    (d.tags || '').split(',').forEach(t => { const s = t.trim(); if (s) items.push(s); });
+                    items.forEach(k => {
+                        if (k.length >= 3 && !STOP.has(k)) tvKwCounts[k] = (tvKwCounts[k] || 0) + 1;
+                    });
+                });
+                // 両方に登場するキーワードを抽出
+                const result = [];
+                const seen = new Set();
+                Object.keys(xTagCounts).forEach(xTag => {
+                    if (seen.has(xTag)) return;
+                    let bestTvCount = 0;
+                    let bestTvKey = '';
+                    Object.keys(tvKwCounts).forEach(tvKey => {
+                        if (tvKey === xTag || tvKey.includes(xTag) || xTag.includes(tvKey)) {
+                            if (tvKwCounts[tvKey] > bestTvCount) {
+                                bestTvCount = tvKwCounts[tvKey];
+                                bestTvKey = tvKey;
+                            }
+                        }
+                    });
+                    if (bestTvCount > 0) {
+                        seen.add(xTag);
+                        result.push({
+                            keyword: xTag,
+                            tvKey: bestTvKey,
+                            tvCount: bestTvCount,
+                            xCount: xTagCounts[xTag],
+                            total: bestTvCount + xTagCounts[xTag]
+                        });
+                    }
+                });
+                return result.sort((a, b) => b.total - a.total).slice(0, 12);
+            }, [filteredTV, filteredX]);
+
+            // --- SVG 横棒グラフ ---
+            const BarChart = ({ data, valueKey, labelKey, color, unit }) => {
+                const BAR_H = 46, GAP = 14, LBL_W = 180, BAR_MAX = 220, VAL_W = 70;
+                const SVG_W = LBL_W + BAR_MAX + VAL_W;
+                const SVG_H = data.length * (BAR_H + GAP);
+                const maxVal = Math.max(...data.map(d => d[valueKey]), 1);
+                const txtColor = isDark ? '#d1d5db' : '#374151';
+                const subColor = isDark ? '#9ca3af' : '#6b7280';
+                const barColor = color || '#3b82f6';
+                const barUnit  = unit  || '件';
+                const splitLabel = (lbl) => {
+                    if (lbl.length <= 10) return [lbl, ''];
+                    const line2 = lbl.substring(10);
+                    return [lbl.substring(0, 10), line2.length > 10 ? line2.substring(0, 10) + '…' : line2];
+                };
+                return (
+                    <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{width:'100%',maxWidth:`${SVG_W}px`,overflow:'hidden',display:'block'}}>
+                        {data.map((d, i) => {
+                            const barW = Math.max(4, (d[valueKey] / maxVal) * BAR_MAX);
+                            const y = i * (BAR_H + GAP);
+                            const rank = i + 1;
+                            const lbl = String(d[labelKey] || '');
+                            const [line1, line2] = splitLabel(lbl);
+                            const rankColor = rank === 1 ? '#f59e0b' : rank === 2 ? '#9ca3af' : rank === 3 ? '#b45309' : subColor;
+                            const textY1 = line2 ? y + BAR_H / 2 - 2 : y + BAR_H / 2 + 5;
+                            const textY2 = y + BAR_H / 2 + 14;
+                            return (
+                                <g key={i}>
+                                    <text x={24} y={textY1} textAnchor="end" fontSize="11" fontWeight="bold" fill={rankColor}>{rank}</text>
+                                    <text x={30} y={textY1} textAnchor="start" fontSize="12" fill={txtColor}>{line1}</text>
+                                    {line2 && <text x={30} y={textY2} textAnchor="start" fontSize="12" fill={txtColor}>{line2}</text>}
+                                    <rect x={LBL_W} y={y + 6} width={barW} height={BAR_H - 12} rx={5} fill={barColor} opacity={Math.max(0.55, 0.9 - i * 0.025)} />
+                                    <text x={LBL_W + barW + 6} y={y + BAR_H / 2 + 5} fontSize="12" fill={subColor}>{d[valueKey].toLocaleString()}{barUnit}</text>
+                                </g>
+                            );
+                        })}
+                    </svg>
+                );
+            };
+
+            const TABS = [
+                { id: 'theme',   label: 'テーマ別',           icon: 'ph-tag',              color: '#3b82f6' },
+                { id: 'program', label: '番組別',             icon: 'ph-television',       color: '#8b5cf6' },
+                { id: 'station', label: '局別',               icon: 'ph-broadcast',        color: '#10b981' },
+                { id: 'x',       label: 'Xエンゲージメント', icon: 'ph-trend-up',         color: '#f59e0b' },
+                { id: 'cross',   label: 'クロスメディア',     icon: 'ph-arrows-left-right', color: '#ef4444' },
+            ];
+
+            const cardCls = `rounded-xl border mb-6 ${isDark ? 'bg-[#1e1e20] border-gray-800' : 'bg-white border-gray-200 shadow-sm'}`;
+            const rankColor = (i) => i === 0 ? '#f59e0b' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : (isDark ? '#6b7280' : '#9ca3af');
+
+            return (
+                <div className={`flex-1 flex flex-col h-full overflow-hidden ${isDark ? 'bg-[#131314] text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
+
+                    {/* ヘッダー */}
+                    <div className={`px-6 py-4 border-b flex-shrink-0 ${isDark ? 'border-gray-800 bg-[#1a1a1c]' : 'border-gray-200 bg-white shadow-sm'}`}>
+                        <div className="flex items-start gap-3 flex-wrap">
+                            <div className="flex items-center gap-3 flex-shrink-0 mt-0.5">
+                                <i className="ph ph-trophy text-2xl text-yellow-500"></i>
+                                <h1 className="text-xl font-bold whitespace-nowrap">トレンドランキング</h1>
+                            </div>
+                            {/* 日付範囲選択 */}
+                            <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                                <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-sm ${isDark ? 'border-gray-700 bg-[#131314]' : 'border-gray-300 bg-gray-50'}`}>
+                                    <i className={`ph ph-calendar text-base ${isDark ? 'text-gray-400' : 'text-gray-500'}`}></i>
+                                    <input
+                                        type="date"
+                                        value={toInputVal(startDate)}
+                                        min={toInputVal(dataMinDate)}
+                                        max={toInputVal(endDate)}
+                                        onChange={e => setStartDate(fromInputVal(e.target.value) || dataMinDate)}
+                                        className={`bg-transparent outline-none text-sm w-32 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
+                                        style={{colorScheme: isDark ? 'dark' : 'light'}}
+                                    />
+                                    <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>〜</span>
+                                    <input
+                                        type="date"
+                                        value={toInputVal(endDate)}
+                                        min={toInputVal(startDate)}
+                                        max={toInputVal(dataMaxDate)}
+                                        onChange={e => setEndDate(fromInputVal(e.target.value) || dataMaxDate)}
+                                        className={`bg-transparent outline-none text-sm w-32 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
+                                        style={{colorScheme: isDark ? 'dark' : 'light'}}
+                                    />
+                                </div>
+                                {/* クイック選択 */}
+                                <div className="flex gap-1">
+                                    {[['7日', 7], ['14日', 14], ['全期間', 0]].map(([lbl, d]) => (
+                                        <button key={lbl} onClick={() => setQuick(d)}
+                                            className={`px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors whitespace-nowrap ${
+                                                isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}>
+                                            直近{lbl === '全期間' ? '' : lbl}{lbl === '全期間' ? lbl : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                                {/* 件数サマリー */}
+                                <span className={`text-xs ml-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    TV {filteredTV.length}件 ／ X {filteredX.length}日分
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* タブナビ */}
+                    <div className={`px-6 border-b flex-shrink-0 ${isDark ? 'border-gray-800 bg-[#1a1a1c]' : 'border-gray-200 bg-white'}`}>
+                        <div className="flex overflow-x-auto">
+                            {TABS.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                                        activeTab === tab.id
+                                            ? 'border-blue-500 text-blue-500'
+                                            : isDark ? 'border-transparent text-gray-400 hover:text-gray-200' : 'border-transparent text-gray-500 hover:text-gray-700'
+                                    }`}
+                                >
+                                    <i className={`ph ${tab.icon}`}></i>
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* コンテンツ */}
+                    <div className="flex-1 overflow-y-auto p-6">
+                        <div className="max-w-3xl mx-auto">
+
+                            {/* ===== テーマ別 ===== */}
+                            {activeTab === 'theme' && (
+                                <div>
+                                    <div className={cardCls}>
+                                        <div className="p-5">
+                                            <h2 className="font-bold text-base mb-1 flex items-center gap-2">
+                                                <i className="ph ph-tag text-blue-500"></i> TVトレンドテーマ 露出ランキング
+                                            </h2>
+                                            <p className={`text-xs mb-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>TVメタデータのテーマ別登場回数（上位15件）</p>
+                                            <BarChart data={themeRanking} valueKey="count" labelKey="name" color="#3b82f6" unit="回" />
+                                        </div>
+                                    </div>
+                                    <div className={`rounded-xl overflow-hidden border ${isDark ? 'border-gray-800' : 'border-gray-200 shadow-sm'}`}>
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className={isDark ? 'bg-gray-800/80 text-gray-300' : 'bg-gray-50 text-gray-600'}>
+                                                    <th className="px-4 py-3 text-left font-semibold w-12">順位</th>
+                                                    <th className="px-4 py-3 text-left font-semibold">テーマ</th>
+                                                    <th className="px-4 py-3 text-right font-semibold w-20">回数</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {themeRanking.map((d, i) => (
+                                                    <tr key={i} className={`border-t ${isDark ? 'border-gray-800 hover:bg-gray-800/40' : 'border-gray-100 hover:bg-blue-50/30'}`}>
+                                                        <td className="px-4 py-2.5 font-bold text-center" style={{color: rankColor(i)}}>{i + 1}</td>
+                                                        <td className="px-4 py-2.5">{d.name}</td>
+                                                        <td className="px-4 py-2.5 text-right font-semibold text-blue-500">{d.count}回</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ===== 番組別 ===== */}
+                            {activeTab === 'program' && (
+                                <div>
+                                    <div className={cardCls}>
+                                        <div className="p-5">
+                                            <h2 className="font-bold text-base mb-1 flex items-center gap-2">
+                                                <i className="ph ph-television text-purple-500"></i> 番組別 トレンド取り上げ数ランキング
+                                            </h2>
+                                            <p className={`text-xs mb-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>番組ごとのグルメ・食トレンド取り上げ回数（上位10件）</p>
+                                            <BarChart data={programRanking} valueKey="count" labelKey="name" color="#8b5cf6" unit="回" />
+                                        </div>
+                                    </div>
+                                    <div className={`rounded-xl overflow-hidden border ${isDark ? 'border-gray-800' : 'border-gray-200 shadow-sm'}`}>
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className={isDark ? 'bg-gray-800/80 text-gray-300' : 'bg-gray-50 text-gray-600'}>
+                                                    <th className="px-4 py-3 text-left font-semibold w-12">順位</th>
+                                                    <th className="px-4 py-3 text-left font-semibold">番組名</th>
+                                                    <th className="px-4 py-3 text-right font-semibold w-20">回数</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {programRanking.map((d, i) => (
+                                                    <tr key={i} className={`border-t ${isDark ? 'border-gray-800 hover:bg-gray-800/40' : 'border-gray-100 hover:bg-purple-50/30'}`}>
+                                                        <td className="px-4 py-2.5 font-bold text-center" style={{color: rankColor(i)}}>{i + 1}</td>
+                                                        <td className="px-4 py-2.5">{d.name}</td>
+                                                        <td className="px-4 py-2.5 text-right font-semibold text-purple-500">{d.count}回</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ===== 局別 ===== */}
+                            {activeTab === 'station' && (
+                                <div>
+                                    <div className={cardCls}>
+                                        <div className="p-5">
+                                            <h2 className="font-bold text-base mb-1 flex items-center gap-2">
+                                                <i className="ph ph-broadcast text-green-500"></i> 局別 放送回数比較
+                                            </h2>
+                                            <p className={`text-xs mb-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>テレビ局ごとのグルメ・食トレンド放送回数</p>
+                                            <BarChart data={stationRanking} valueKey="count" labelKey="name" color="#10b981" unit="回" />
+                                        </div>
+                                    </div>
+                                    <div className={`rounded-xl overflow-hidden border ${isDark ? 'border-gray-800' : 'border-gray-200 shadow-sm'}`}>
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className={isDark ? 'bg-gray-800/80 text-gray-300' : 'bg-gray-50 text-gray-600'}>
+                                                    <th className="px-4 py-3 text-left font-semibold w-12">順位</th>
+                                                    <th className="px-4 py-3 text-left font-semibold">テレビ局</th>
+                                                    <th className="px-4 py-3 text-right font-semibold w-20">回数</th>
+                                                    <th className="px-4 py-3 text-right font-semibold w-16">割合</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(() => {
+                                                    const total = stationRanking.reduce((s, d) => s + d.count, 0);
+                                                    return stationRanking.map((d, i) => (
+                                                        <tr key={i} className={`border-t ${isDark ? 'border-gray-800 hover:bg-gray-800/40' : 'border-gray-100 hover:bg-green-50/30'}`}>
+                                                            <td className="px-4 py-2.5 font-bold text-center" style={{color: rankColor(i)}}>{i + 1}</td>
+                                                            <td className="px-4 py-2.5 font-semibold">{d.name}</td>
+                                                            <td className="px-4 py-2.5 text-right font-semibold text-green-500">{d.count}回</td>
+                                                            <td className="px-4 py-2.5 text-right text-gray-400 text-xs">{Math.round(d.count / total * 100)}%</td>
+                                                        </tr>
+                                                    ));
+                                                })()}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ===== Xエンゲージメント ===== */}
+                            {activeTab === 'x' && (
+                                <div>
+                                    <div className={cardCls}>
+                                        <div className="p-5">
+                                            <h2 className="font-bold text-base mb-1 flex items-center gap-2">
+                                                <i className="ph ph-trend-up text-amber-500"></i> X 投稿 エンゲージメントランキング
+                                            </h2>
+                                            <p className={`text-xs mb-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Like＋Repost の合計値による上位15件（食・グルメカテゴリ）</p>
+                                            <BarChart
+                                                data={xEngagementRanking.map(p => ({
+                                                    name: p.date.replace('2025年','').replace('日','') + '  ' + p.text,
+                                                    count: p.total
+                                                }))}
+                                                valueKey="count" labelKey="name" color="#f59e0b" unit=""
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className={`rounded-xl overflow-hidden border ${isDark ? 'border-gray-800' : 'border-gray-200 shadow-sm'}`}>
+                                        <div style={{overflowX:'auto'}}>
+                                            <table className="text-xs" style={{minWidth:'680px',width:'100%'}}>
+                                                <thead>
+                                                    <tr className={isDark ? 'bg-gray-800/80 text-gray-300' : 'bg-gray-50 text-gray-600'}>
+                                                        <th className="px-3 py-3 text-left font-semibold w-10">順位</th>
+                                                        <th className="px-3 py-3 text-left font-semibold w-20">日付</th>
+                                                        <th className="px-3 py-3 text-left font-semibold">投稿テキスト</th>
+                                                        <th className="px-3 py-3 text-right font-semibold w-20">Like</th>
+                                                        <th className="px-3 py-3 text-right font-semibold w-20">Repost</th>
+                                                        <th className="px-3 py-3 text-right font-semibold w-24">View</th>
+                                                        <th className="px-3 py-3 text-center font-semibold w-12">Link</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {xEngagementRanking.map((p, i) => (
+                                                        <tr key={i} className={`border-t ${isDark ? 'border-gray-800 hover:bg-gray-800/40' : 'border-gray-100 hover:bg-amber-50/30'}`}>
+                                                            <td className="px-3 py-2.5 font-bold text-center" style={{color: rankColor(i)}}>{i + 1}</td>
+                                                            <td className="px-3 py-2.5 whitespace-nowrap text-gray-400">{p.date.replace('2025年','')}</td>
+                                                            <td className="px-3 py-2.5" style={{maxWidth:'260px'}}>{p.text}</td>
+                                                            <td className="px-3 py-2.5 text-right font-semibold text-red-400">{p.like.toLocaleString()}</td>
+                                                            <td className="px-3 py-2.5 text-right font-semibold text-green-400">{p.repost.toLocaleString()}</td>
+                                                            <td className="px-3 py-2.5 text-right text-gray-400">{p.view.toLocaleString()}</td>
+                                                            <td className="px-3 py-2.5 text-center">
+                                                                {p.url && p.url !== '-' && (
+                                                                    <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                                                                        <i className="ph ph-arrow-square-out text-sm"></i>
+                                                                    </a>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ===== クロスメディア ===== */}
+                            {activeTab === 'cross' && (
+                                <div>
+                                    <div className={cardCls}>
+                                        <div className="p-5">
+                                            <h2 className="font-bold text-base mb-1 flex items-center gap-2">
+                                                <i className="ph ph-arrows-left-right text-red-500"></i> クロスメディア キーワードランキング
+                                            </h2>
+                                            <p className={`text-xs mb-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>TVメタデータとXデータの両方に登場したキーワード（露出数合算・上位12件）</p>
+                                            {crossRanking.length > 0 ? (
+                                                <BarChart
+                                                    data={crossRanking.map(d => ({ name: d.keyword, count: d.total }))}
+                                                    valueKey="count" labelKey="name" color="#ef4444" unit="件"
+                                                />
+                                            ) : (
+                                                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>マッチするキーワードが見つかりませんでした。</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {crossRanking.length > 0 && (
+                                        <div className={`rounded-xl overflow-hidden border ${isDark ? 'border-gray-800' : 'border-gray-200 shadow-sm'}`}>
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className={isDark ? 'bg-gray-800/80 text-gray-300' : 'bg-gray-50 text-gray-600'}>
+                                                        <th className="px-4 py-3 text-left font-semibold w-12">順位</th>
+                                                        <th className="px-4 py-3 text-left font-semibold">キーワード</th>
+                                                        <th className="px-4 py-3 text-right font-semibold">TV露出数</th>
+                                                        <th className="px-4 py-3 text-right font-semibold">X登場数</th>
+                                                        <th className="px-4 py-3 text-right font-semibold w-20">合計</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {crossRanking.map((d, i) => (
+                                                        <tr key={i} className={`border-t ${isDark ? 'border-gray-800 hover:bg-gray-800/40' : 'border-gray-100 hover:bg-red-50/30'}`}>
+                                                            <td className="px-4 py-2.5 font-bold text-center" style={{color: rankColor(i)}}>{i + 1}</td>
+                                                            <td className="px-4 py-2.5 font-semibold">{d.keyword}</td>
+                                                            <td className="px-4 py-2.5 text-right">
+                                                                <span className="px-2 py-0.5 rounded text-xs font-semibold" style={{background:'rgba(251,146,60,0.15)',color:'#f97316'}}>TV {d.tvCount}件</span>
+                                                            </td>
+                                                            <td className="px-4 py-2.5 text-right">
+                                                                <span className="px-2 py-0.5 rounded text-xs font-semibold" style={{background:isDark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)',color:isDark?'#e5e7eb':'#374151'}}>X {d.xCount}件</span>
+                                                            </td>
+                                                            <td className="px-4 py-2.5 text-right font-bold text-red-400">{d.total}件</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // 4. アプリルート
         const App = () => {
+            const [currentView, setCurrentView] = React.useState('chat');
             const [apiKey, setApiKey] = React.useState('');
             const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
             const [theme, setTheme] = React.useState('dark');
@@ -1261,15 +2942,27 @@ ${templateQuestions}
             return (
                 <div className={`flex h-screen w-full overflow-hidden ${theme === 'dark' ? 'bg-[#131314] text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
                     <Sidebar 
-                        onNewChat={() => window.location.reload()} 
+                        onNewChat={() => window.location.reload()}
                         onOpenSettings={() => setIsSettingsOpen(true)}
                         hasKey={!!apiKey}
                         theme={theme}
+                        currentView={currentView}
+                        onViewChange={setCurrentView}
                     />
-                    <ChatArea 
-                        apiKey={apiKey} 
-                        theme={theme}
-                    />
+                    {currentView === 'ranking' ? (
+                        <RankingView theme={theme} />
+                    ) : currentView === 'keywordmap' ? (
+                        <KeywordMapView theme={theme} />
+                    ) : currentView === 'positioningmap' ? (
+                        <PositioningMapView theme={theme} />
+                    ) : currentView === 'report' ? (
+                        <ReportView theme={theme} apiKey={apiKey} />
+                    ) : (
+                        <ChatArea 
+                            apiKey={apiKey} 
+                            theme={theme}
+                        />
+                    )}
                     <ApiKeyModal 
                         isOpen={isSettingsOpen} 
                         onClose={() => setIsSettingsOpen(false)}
